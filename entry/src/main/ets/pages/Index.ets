@@ -123,7 +123,7 @@ struct Index {
     }, 30 * 1000);
     this.sleepTimer.start();
     const observer = this.getUIContext().getUIObserver();
-    observer.on('didLayout', () => {
+    observer.on('willClick', () => {
       this.sleepTimer?.refresh();
     })
   }
@@ -401,5 +401,6 @@ struct Index {
     .height('100%')
     .width('100%')
     .backgroundColor(Color.Black)
+    .onClick(() => {})
   }
 }
