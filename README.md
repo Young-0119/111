@@ -1,39 +1,87 @@
-# CustomCamera
+## 自定义相机开发实践
 
-#### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+### 介绍
 
-#### 软件架构
-软件架构说明
+本示例基于Camera Kit相机服务，实现预览、双路预览、拍照、录像等功能。为开发者提供基于自定义相机的开发指导。
 
+### 效果预览
 
-#### 安装教程
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 使用说明
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 参与贡献
-
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+| 拍照 & 预览                              | 录像 & 预览                              |
+|--------------------------------------|--------------------------------------|
+| ![](./screenshots/devices/photo.png) | ![](./screenshots/devices/video.png) |
 
 
-#### 特技
+使用说明：
+1. 打开应用，授权后展示预览界面。
+2. 上方从左至右按钮功能依次为：闪光灯设置、延迟拍照模式设置、动态拍照模式设置、单双段拍照模式设置（单段拍照模式不支持动态拍摄）。
+3. 切换录像模式，上方按钮依次为：闪关灯设置、防抖模式设置。
+4. 右侧按钮依次为：网格线、水平仪。
+5. 下方按钮可拍照，录像，切换前后置摄像头。
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+### 工程目录
+
+```
+├──camera/src/           
+│  ├──main/ets/  
+│  │  ├──components             
+│  │  │  ├──GridLine.ets                            // 网格线组件
+│  │  │  └──LevelIndicator.ets                      // 水平仪组件
+│  │  ├──constants
+│  │  │  └──CameraConstants.ets                     // 常量文件
+│  │  └──cameraManagers             
+│  │     ├──CamaraManager.ets                       // 相机会话管理类
+│  │     ├──ImageReceiverManager.ets                // ImageReceiver预览流管理类
+│  │     ├──OutputManager.ets                       // 输出流管理类抽象接口
+│  │     ├──PhotoManager.ets                        // 拍照流管理类
+│  │     ├──VideoManager.ets                        // 视频流管理类
+│  │     └──PreviewManager.ets                      // 预览流管理类 
+│  └──Index.ets                                     // 相机模块导出文件
+├──commons/src/main/ets/                               
+│  └──utils           
+│     └──Logger.ets                                 // 日志类  
+├──entry/src/main/ets/                              
+│  ├──entryability
+│  │  └──EntryAbility.ets                           // 程序入口类
+│  ├──constants
+│  │  └──Constants.ets                              // 常量文件
+│  ├──pages             
+│  │  └──Index.ets                                  // 入口预览页面
+│  ├──views             
+│  │  ├──ModeButtonsView.ets                        // 拍照模式切换按钮视图
+│  │  ├──OperateButtonsView.ets                     // 操作按钮视图
+│  │  ├──SettingButtonsView.ets                     // 设置按钮视图
+│  │  └──ZoomButtonsView.ets                        // 设置焦距按钮视图
+│  ├──viewModels         
+│  │  └──PreviewViewModel.ets                       // 预览相关的状态管理类   
+│  └──utils
+│     ├──CommonUtil.ets                             // 通用工具函数模块             
+│     ├──PermissionManager.ets                      // 权限管理类 
+│     ├──RefreshableTimer.ets                       // 定时器管理类            
+│     └──WindowUtil.ets                             // 窗口工具类  
+└──entry/src/main/resources                         // 应用静态资源目录
+```
+
+### 具体实现
+
+1. 使用Camera Kit相关能力。
+
+### 相关权限
+
+- ohos.permission.CAMERA：用于相机操作
+- ohos.permission.MICROPHONE：麦克风权限，用于录像
+- ohos.permission.MEDIA_LOCATION: 用于获取地理信息
+- ohos.permission.WRITE_IMAGEVIDEO：用于写入媒体文件
+- hos.permission.READ_IMAGEVIDEO：用于读取媒体文件
+- ohos.permission.ACCELEROMETER：用于加速度传感器
+
+
+### 约束与限制
+
+1.本示例仅支持标准系统上运行，支持设备：华为手机、平板。
+
+2.HarmonyOS系统：HarmonyOS 5.0.0 Release及以上。
+
+3.DevEco Studio版本：DevEco Studio 5.0.0 Release及以上。
+
+4.HarmonyOS SDK版本：HarmonyOS 5.0.0 Release SDK及以上。
+
