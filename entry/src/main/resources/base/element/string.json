@@ -1,0 +1,60 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "CustomCamera"
+    },
+    {
+      "name": "permission_CAMERA",
+      "value": "用于相机操作"
+    },
+    {
+      "name": "reason_microphone",
+      "value": "用于相机录像场景"
+    },
+    {
+      "name": "reason_media_location",
+      "value": "用于相机获取媒体信息场景"
+    },
+    {
+      "name": "reason_write_imagevideo",
+      "value": "用于相机读写媒体文件"
+    },
+    {
+      "name": "reason_read_imagevideo",
+      "value": "用于相机读写媒体文件"
+    },
+    {
+      "name": "permission_SENSOR",
+      "value": "用于传感器"
+    },
+    {
+      "name": "recording",
+      "value": "录制中"
+    },
+    {
+      "name": "paused",
+      "value": "已暂停"
+    },
+    {
+      "name": "wakeup_text",
+      "value": "点击屏幕唤醒相机"
+    },
+    {
+      "name": "photo",
+      "value": "拍照"
+    },
+    {
+      "name": "video",
+      "value": "录像"
+    }
+  ]
+}
