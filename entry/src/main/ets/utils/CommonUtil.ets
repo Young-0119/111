@@ -64,3 +64,18 @@ export function getClampedChildPosition(childSize: Size, parentSize: Size, point
   }
   return { left, top };
 }
+
+export function showToast(
+  UIContext: UIContext,
+  message: ResourceStr = '',
+  duration = 2000,
+  alignment = Alignment.Top,
+  offset: Offset = { dx: 0, dy: 300 }
+) {
+  UIContext.getPromptAction().openToast({
+    message,
+    duration,
+    alignment,
+    offset
+  });
+}

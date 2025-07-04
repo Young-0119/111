@@ -14,7 +14,7 @@
  */
 
 import CameraConstant from '../constants/Constants';
-import { getClampedChildPosition, limitNumberInRange } from '../utils/CommonUtil';
+import { getClampedChildPosition, limitNumberInRange, showToast } from '../utils/CommonUtil';
 import RefreshableTimer from '../utils/RefreshableTimer';
 import PermissionManager from '../utils/PermissionManager';
 import ZoomButtonsView from '../views/ZoomButtonsView';
@@ -295,7 +295,9 @@ struct Index {
     )
       .funcButtonStyle()
       .onClick(() => {
-        this.isGridLineVisible = !this.isGridLineVisible
+        this.isGridLineVisible = !this.isGridLineVisible;
+        const message = this.isGridLineVisible ? $r('app.string.grid_line_open') : $r('app.string.grid_line_close');
+        showToast(this.getUIContext(), message);
       })
   }
 
@@ -305,6 +307,8 @@ struct Index {
       .funcButtonStyle()
       .onClick(() => {
         this.isLevelIndicatorVisible = !this.isLevelIndicatorVisible;
+        const message = this.isLevelIndicatorVisible ? $r('app.string.level_open') : $r('app.string.level_close');
+        showToast(this.getUIContext(), message);
       })
   }
 
