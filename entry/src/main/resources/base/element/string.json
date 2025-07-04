@@ -123,6 +123,14 @@
     {
       "name": "flash_open",
       "value": "闪光灯已开启"
+    },
+    {
+      "name": "preview_image_open",
+      "value": "双路预览已开启"
+    },
+    {
+      "name": "preview_image_close",
+      "value": "双路预览已关闭"
     }
   ]
 }

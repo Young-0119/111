@@ -62,6 +62,7 @@ struct Index {
 
   @State isGridLineVisible: boolean = false;
   @State isLevelIndicatorVisible: boolean = false;
+  @State isPreviewImageVisible: boolean = false;
 
   @State isFocusBoxVisible: boolean = false;
   @State focusBoxPosition: Edges = { top: 0, left: 0 };
@@ -312,6 +313,19 @@ struct Index {
       })
   }
 
+  @Builder
+  previewImageButton() {
+    SymbolGlyph(
+      this.isPreviewImageVisible ? $r('sys.symbol.eye') : $r('sys.symbol.eye_slash')
+    )
+      .funcButtonStyle()
+      .onClick(() => {
+        this.isPreviewImageVisible = !this.isPreviewImageVisible;
+        const message = this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
+        showToast(this.getUIContext(), message);
+      })
+  }
+
   getPreviewImageWidth() {
     const orientation = display.getDefaultDisplaySync().orientation;
     const isLandscape = orientation === display.Orientation.LANDSCAPE_INVERTED
@@ -341,6 +355,7 @@ struct Index {
     Column({ space: 24 }) {
       this.gridLineButton()
       this.levelButton()
+      this.previewImageButton()
     }
     .alignRules({
       top: { anchor: 'settingButtonsView', align: VerticalAlign.Bottom },
@@ -355,7 +370,9 @@ struct Index {
   build() {
     RelativeContainer() {
       this.preview()
-      this.previewImageView()
+      if (this.isPreviewImageVisible) {
+        this.previewImageView()
+      }
       this.funcButtonsView()
       SettingButtonsView({
         previewVM: this.previewVM,
