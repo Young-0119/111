@@ -14,7 +14,7 @@
  */
 
 import CameraConstant from '../constants/Constants';
-import { getClampedChildPosition, limitNumberInRange, showToast } from '../utils/CommonUtil';
+import { calCameraPoint, getClampedChildPosition, limitNumberInRange, showToast } from '../utils/CommonUtil';
 import RefreshableTimer from '../utils/RefreshableTimer';
 import PermissionManager from '../utils/PermissionManager';
 import ZoomButtonsView from '../views/ZoomButtonsView';
@@ -23,7 +23,7 @@ import SettingButtonsView from '../views/SettingButtonsView';
 import OperateButtonsView from '../views/OperateButtonsView';
 import { sensor } from '@kit.SensorServiceKit';
 import { common } from '@kit.AbilityKit';
-import { display } from '@kit.ArkUI';
+import { display, window } from '@kit.ArkUI';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
 import { CameraManager,
   GridLine,
@@ -223,11 +223,13 @@ struct Index {
         .onClick(event => {
           this.isFocusBoxVisible = true;
           const previewSize = this.previewVM.previewSize;
-          // unit
-          const x = this.getUIContext().vp2px(event.y) / previewSize.height;
-          const y = 1 - this.getUIContext().vp2px(event.x) / previewSize.width;
-          this.cameraManager.setFocusPoint({ x, y });
-
+          const cameraPoint = calCameraPoint(
+            this.getUIContext().vp2px(event.x),
+            this.getUIContext().vp2px(event.y),
+            previewSize.width,
+            previewSize.height
+          );
+          this.cameraManager.setFocusPoint(cameraPoint);
           this.focusBoxPosition = getClampedChildPosition(this.focusBoxSize, {
             width: this.getUIContext().px2vp(previewSize.width),
             height: this.getUIContext().px2vp(previewSize.height)

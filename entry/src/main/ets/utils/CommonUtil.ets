@@ -14,6 +14,8 @@
  */
 
 import { Point } from "@kit.TestKit"
+import { camera } from "@kit.CameraKit";
+import { display } from "@kit.ArkUI";
 
 export function limitNumberInRange(src: number, range: number[]) {
   if (range.length < 2) return src;
@@ -78,4 +80,18 @@ export function showToast(
     alignment,
     offset
   });
+}
+
+export function calCameraPoint(eventX: number, eventY: number, width: number, height: number): camera.Point {
+  const orientation = display.getDefaultDisplaySync().orientation;
+  if (orientation === display.Orientation.PORTRAIT) {
+    return { x: eventY / height, y: 1 - eventX / width };
+  }
+  if (orientation === display.Orientation.LANDSCAPE) {
+    return { x: eventX / width, y: eventY / height };
+  }
+  if (orientation === display.Orientation.PORTRAIT_INVERTED) {
+    return { x: 1 - eventY / height, y: eventX / width };
+  }
+  return { x: 1 - eventX / width, y: 1 - eventY / height };
 }
