@@ -13,8 +13,8 @@
  * limitations under the License.
  */
 
-import { CameraManager } from "camera";
-import { findRangeIndex, toFixed } from "../utils/CommonUtil";
+import { CameraManager } from 'camera';
+import { findRangeIndex, toFixed } from '../utils/CommonUtil';
 
 @Component
 struct ZoomButtonsView {

@@ -13,11 +13,11 @@
  * limitations under the License.
  */
 
-import { camera } from "@kit.CameraKit";
-import { Logger } from "commons/src/main/ets/utils/Logger";
-import { BusinessError } from "@kit.BasicServicesKit";
-import OutputManager, { CreateOutputConfig } from "./OutputManager";
-import CameraConstant from "../constants/CameraConstants";
+import { camera } from '@kit.CameraKit';
+import { Logger } from 'commons/src/main/ets/utils/Logger';
+import { BusinessError } from '@kit.BasicServicesKit';
+import OutputManager, { CreateOutputConfig } from './OutputManager';
+import CameraConstant from '../constants/CameraConstants';
 
 const TAG_LOG = 'PreviewManager'
 

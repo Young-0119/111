@@ -13,10 +13,10 @@
  * limitations under the License.
  */
 
-import { camera } from "@kit.CameraKit";
-import { Logger } from "commons/src/main/ets/utils/Logger";
-import { BusinessError } from "@kit.BasicServicesKit";
-import OutputManager, { CreateOutputConfig } from "./OutputManager";
+import { camera } from '@kit.CameraKit';
+import { Logger } from 'commons/src/main/ets/utils/Logger';
+import { BusinessError } from '@kit.BasicServicesKit';
+import OutputManager, { CreateOutputConfig } from './OutputManager';
 
 const TAG = 'CameraManager';
 
@@ -78,7 +78,7 @@ export class CameraManager {
       await session.commitConfig();
       await session.start();
       this.session = session as (camera.PhotoSession | camera.VideoSession);
-      this.session.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO);
+      this.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO);
     } catch (e) {
       Logger.error(TAG, `Failed to start camera session. Cause ${JSON.stringify(e)}`);
     }
@@ -119,6 +119,11 @@ export class CameraManager {
 
   setFocusMode(focusMode: camera.FocusMode) {
     try {
+      const isSupported = this.session?.isFocusModeSupported(focusMode);
+      if (!isSupported) {
+        Logger.error(TAG, `setFocusMode error: focus mode ${focusMode} is not supported`);
+        return;
+      }
       this.session?.setFocusMode(focusMode);
     } catch(e) {
       Logger.error(TAG, 'setFocusMode error ' + JSON.stringify(e));
@@ -151,6 +156,11 @@ export class CameraManager {
 
   setFlashMode(flashMode: camera.FlashMode) {
     try {
+      const isSupported = this.session?.isFlashModeSupported(flashMode);
+      if (!isSupported) {
+        Logger.error(TAG, `setFlashMode error: flash mode ${flashMode} is not supported`);
+        return;
+      }
       this.session?.setFlashMode(flashMode);
     } catch(e) {
       Logger.error(TAG, 'setFlashMode error ' + JSON.stringify(e));
@@ -160,7 +170,7 @@ export class CameraManager {
   setVideoStabilizationMode(stabilizationMode: camera.VideoStabilizationMode) {
     try {
       const session = this.session as camera.VideoSession;
-      let isSupported: boolean = session.isVideoStabilizationModeSupported(stabilizationMode);
+      const isSupported: boolean = session.isVideoStabilizationModeSupported(stabilizationMode);
       if (isSupported) {
         session.setVideoStabilizationMode(stabilizationMode);
       } else {

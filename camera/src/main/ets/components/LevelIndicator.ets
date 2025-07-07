@@ -13,8 +13,8 @@
  * limitations under the License.
  */
 
-import { curves, display } from "@kit.ArkUI";
-import { sensor } from "@kit.SensorServiceKit";
+import { curves, display } from '@kit.ArkUI';
+import { sensor } from '@kit.SensorServiceKit';
 
 @Component
 export struct LevelIndicator {

@@ -14,7 +14,7 @@
  */
 
 import CameraConstant from '../constants/Constants';
-import { getClampedChildPosition, limitNumberInRange } from '../utils/CommonUtil';
+import { calCameraPoint, getClampedChildPosition, limitNumberInRange, showToast } from '../utils/CommonUtil';
 import RefreshableTimer from '../utils/RefreshableTimer';
 import PermissionManager from '../utils/PermissionManager';
 import ZoomButtonsView from '../views/ZoomButtonsView';
@@ -62,6 +62,7 @@ struct Index {
 
   @State isGridLineVisible: boolean = false;
   @State isLevelIndicatorVisible: boolean = false;
+  @State isPreviewImageVisible: boolean = false;
 
   @State isFocusBoxVisible: boolean = false;
   @State focusBoxPosition: Edges = { top: 0, left: 0 };
@@ -92,7 +93,7 @@ struct Index {
   private setPreviewSize: () => void = () => { this.previewVM.setPreviewSize(); }
 
   async aboutToAppear() {
-    sensor.on(sensor.SensorId.ACCELEROMETER, (data) => {
+    sensor.on(sensor.SensorId.GRAVITY, (data) => {
       this.acc = data;
     }, { interval: 100 * 1000 * 1000 }); // 100ms
     this.initSleepTimer();
@@ -222,11 +223,13 @@ struct Index {
         .onClick(event => {
           this.isFocusBoxVisible = true;
           const previewSize = this.previewVM.previewSize;
-          // unit
-          const x = this.getUIContext().vp2px(event.y) / previewSize.height;
-          const y = 1 - this.getUIContext().vp2px(event.x) / previewSize.width;
-          this.cameraManager.setFocusPoint({ x, y });
-
+          const cameraPoint = calCameraPoint(
+            this.getUIContext().vp2px(event.x),
+            this.getUIContext().vp2px(event.y),
+            previewSize.width,
+            previewSize.height
+          );
+          this.cameraManager.setFocusPoint(cameraPoint);
           this.focusBoxPosition = getClampedChildPosition(this.focusBoxSize, {
             width: this.getUIContext().px2vp(previewSize.width),
             height: this.getUIContext().px2vp(previewSize.height)
@@ -295,7 +298,9 @@ struct Index {
     )
       .funcButtonStyle()
       .onClick(() => {
-        this.isGridLineVisible = !this.isGridLineVisible
+        this.isGridLineVisible = !this.isGridLineVisible;
+        const message = this.isGridLineVisible ? $r('app.string.grid_line_open') : $r('app.string.grid_line_close');
+        showToast(this.getUIContext(), message);
       })
   }
 
@@ -305,6 +310,21 @@ struct Index {
       .funcButtonStyle()
       .onClick(() => {
         this.isLevelIndicatorVisible = !this.isLevelIndicatorVisible;
+        const message = this.isLevelIndicatorVisible ? $r('app.string.level_open') : $r('app.string.level_close');
+        showToast(this.getUIContext(), message);
+      })
+  }
+
+  @Builder
+  previewImageButton() {
+    SymbolGlyph(
+      this.isPreviewImageVisible ? $r('sys.symbol.eye') : $r('sys.symbol.eye_slash')
+    )
+      .funcButtonStyle()
+      .onClick(() => {
+        this.isPreviewImageVisible = !this.isPreviewImageVisible;
+        const message = this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
+        showToast(this.getUIContext(), message);
       })
   }
 
@@ -337,6 +357,7 @@ struct Index {
     Column({ space: 24 }) {
       this.gridLineButton()
       this.levelButton()
+      this.previewImageButton()
     }
     .alignRules({
       top: { anchor: 'settingButtonsView', align: VerticalAlign.Bottom },
@@ -351,7 +372,9 @@ struct Index {
   build() {
     RelativeContainer() {
       this.preview()
-      this.previewImageView()
+      if (this.isPreviewImageVisible) {
+        this.previewImageView()
+      }
       this.funcButtonsView()
       SettingButtonsView({
         previewVM: this.previewVM,

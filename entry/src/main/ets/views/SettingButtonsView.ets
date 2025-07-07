@@ -13,28 +13,56 @@
  * limitations under the License.
  */
 
-import { camera } from "@kit.CameraKit";
-import { AVRecorderState, CameraManager, PhotoManager, PreviewManager, VideoManager } from "camera";
-import PreviewViewModel from "../viewmodels/PreviewViewModel";
+import { camera } from '@kit.CameraKit';
+import { AVRecorderState, CameraManager, PhotoManager, PreviewManager, VideoManager } from 'camera';
+import { showToast } from '../utils/CommonUtil';
+import PreviewViewModel from '../viewmodels/PreviewViewModel';
+
+interface FlashItem {
+  mode: camera.FlashMode;
+  image: Resource;
+  title: ResourceStr;
+  toast: ResourceStr;
+}
 
 @Component
 struct SettingButtonsView {
-  private flashImageMap: Map<camera.FlashMode, Resource> = new Map([
-    [camera.FlashMode.FLASH_MODE_CLOSE, $r('sys.symbol.camera_flash_slash')],
-    [camera.FlashMode.FLASH_MODE_OPEN, $r('sys.symbol.camera_flash')],
-    [camera.FlashMode.FLASH_MODE_AUTO, $r('sys.symbol.camera_flash_auto')],
-    [camera.FlashMode.FLASH_MODE_ALWAYS_OPEN, $r('sys.symbol.lightbulb_1')],
-  ]);
-  private photoFlashMenuTitleMap: Map<ResourceStr, camera.FlashMode> = new Map([
-    ['off', camera.FlashMode.FLASH_MODE_CLOSE],
-    ['on', camera.FlashMode.FLASH_MODE_OPEN],
-    ['auto', camera.FlashMode.FLASH_MODE_AUTO],
-    ['always_on', camera.FlashMode.FLASH_MODE_ALWAYS_OPEN]
-  ]);
-  private videoFlashMenuTitleMap: Map<ResourceStr, camera.FlashMode> = new Map([
-    ['off', camera.FlashMode.FLASH_MODE_CLOSE],
-    ['always_on', camera.FlashMode.FLASH_MODE_ALWAYS_OPEN]
-  ]);
+  private flashItems: FlashItem[] = [
+    {
+      mode: camera.FlashMode.FLASH_MODE_CLOSE,
+      image: $r('sys.symbol.camera_flash_slash'),
+      title: 'off',
+      toast: $r('app.string.flash_close')
+    },
+    {
+      mode: camera.FlashMode.FLASH_MODE_OPEN,
+      image: $r('sys.symbol.camera_flash'),
+      title: 'on',
+      toast: $r('app.string.flash_open')
+    },
+    {
+      mode: camera.FlashMode.FLASH_MODE_AUTO,
+      image: $r('sys.symbol.camera_flash_auto'),
+      title: 'auto',
+      toast: $r('app.string.flash_auto')
+    },
+    {
+      mode: camera.FlashMode.FLASH_MODE_ALWAYS_OPEN,
+      image: $r('sys.symbol.lightbulb_1'),
+      title: 'always_on',
+      toast: $r('app.string.flash_always')
+    }
+  ];
+  private photoFlashModes: camera.FlashMode[] = [
+    camera.FlashMode.FLASH_MODE_CLOSE,
+    camera.FlashMode.FLASH_MODE_OPEN,
+    camera.FlashMode.FLASH_MODE_AUTO,
+    camera.FlashMode.FLASH_MODE_ALWAYS_OPEN
+  ];
+  private videoFlashModes: camera.FlashMode[] = [
+    camera.FlashMode.FLASH_MODE_CLOSE,
+    camera.FlashMode.FLASH_MODE_ALWAYS_OPEN
+  ];
   @State flashMode: camera.FlashMode = camera.FlashMode.FLASH_MODE_CLOSE;
   @Link isLivePhoto: boolean;
   @Require cameraManager: CameraManager;
@@ -46,26 +74,27 @@ struct SettingButtonsView {
   @Link isSinglePhoto: boolean;
   @Link previewVM: PreviewViewModel;
 
-  getFlashMenuElements(flashMenuTitleMap: Map<ResourceStr, camera.FlashMode>): MenuElement[] {
-    return Array.from(flashMenuTitleMap.keys()).map(text => {
-      const flashMode = flashMenuTitleMap.get(text);
-      const menuElement: MenuElement = {
-        value: text,
-        action: () => {
-          this.flashMode = flashMode!;
-          this.cameraManager.setFlashMode(this.flashMode);
-        }
-      };
-      return menuElement;
-    });
+  getFlashItem(mode: camera.FlashMode) {
+    return this.flashItems.find(item => item.mode === mode);
   }
 
   @Builder
-  flashButton(flashMenuElements: MenuElement[]) {
-    SymbolGlyph(this.flashImageMap.get(this.flashMode))
+  flashButton(flashModes: camera.FlashMode[]) {
+    SymbolGlyph(this.getFlashItem(this.flashMode)?.image)
       .fontSize(22)
       .fontColor([Color.White])
-      .bindMenu(flashMenuElements)
+      .bindMenu(flashModes.map(mode => {
+        const flashItem = this.getFlashItem(mode)!;
+        const menuElement: MenuElement = {
+          value: flashItem.title,
+          action: () => {
+            this.flashMode = mode!;
+            this.cameraManager.setFlashMode(mode);
+            showToast(this.getUIContext(), flashItem.toast);
+          }
+        };
+        return menuElement;
+      }))
   }
 
   @Builder
@@ -91,8 +120,10 @@ struct SettingButtonsView {
       ? $r('sys.symbol.livephoto')
       : $r('sys.symbol.livephoto_slash'))
       .onClick(() => {
-        this.isLivePhoto = !this.isLivePhoto
-        this.photoManager.enableMovingPhoto(this.isLivePhoto)
+        this.isLivePhoto = !this.isLivePhoto;
+        this.photoManager.enableMovingPhoto(this.isLivePhoto);
+        const message = this.isLivePhoto ? $r('app.string.moving_open') : $r('app.string.moving_close');
+        showToast(this.getUIContext(), message);
       })
       .fontSize(22)
       .fontColor([Color.White])
@@ -110,6 +141,7 @@ struct SettingButtonsView {
             action: () => {
               this.previewManager.setFrameRate(rate, rate);
               this.previewVM.currentRate = rate;
+              showToast(this.getUIContext(), $r('app.string.preview_rate', rate + 'fps'));
             }
           };
           return menuElement;
@@ -144,7 +176,9 @@ struct SettingButtonsView {
       const menuElement: MenuElement = {
         value: text,
         action: () => {
-          this.photoDelayTime = time!
+          this.photoDelayTime = time!;
+          const message = time ? $r('app.string.delay', text) : $r('app.string.delay_close');
+          showToast(this.getUIContext(), message);
         }
       };
       return menuElement;
@@ -159,6 +193,8 @@ struct SettingButtonsView {
       .onClick(() => {
         this.isStabilizationEnabled = !this.isStabilizationEnabled;
         this.cameraManager.setVideoStabilizationMode(camera.VideoStabilizationMode.AUTO);
+        const message = this.isStabilizationEnabled ? $r('app.string.stabilization_enable') : $r('app.string.stabilization_disabled');
+        showToast(this.getUIContext(), message);
       })
       .fontSize(22)
       .fontColor([Color.White])
@@ -176,6 +212,8 @@ struct SettingButtonsView {
           this.isLivePhoto = false;
         }
         this.photoManager.enableMovingPhoto(this.isLivePhoto);
+        const message = this.isSinglePhoto ? $r('app.string.photo_single') : $r('app.string.photo_double');
+        showToast(this.getUIContext(), message);
       })
       .fontSize(22)
       .fontColor([Color.White])
@@ -185,7 +223,7 @@ struct SettingButtonsView {
     Row() {
       if (this.previewVM.isPhotoMode()) {
         this.rateButton()
-        this.flashButton(this.getFlashMenuElements(this.photoFlashMenuTitleMap))
+        this.flashButton(this.photoFlashModes)
         this.delayPhotoButton(this.getPhotoDelayTimeElements())
         if (!this.isSinglePhoto) {
           this.livePhotoButton()
@@ -196,7 +234,7 @@ struct SettingButtonsView {
           this.videoTimerBuilder()
         } else {
           this.rateButton()
-          this.flashButton(this.getFlashMenuElements(this.videoFlashMenuTitleMap))
+          this.flashButton(this.videoFlashModes)
           this.stabilizationButton()
         }
       }

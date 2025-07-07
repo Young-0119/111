@@ -13,8 +13,8 @@
  * limitations under the License.
  */
 
-import { abilityAccessCtrl, Context, Permissions } from "@kit.AbilityKit";
-import { Logger } from "commons/src/main/ets/utils/Logger";
+import { abilityAccessCtrl, Context, Permissions } from '@kit.AbilityKit';
+import { Logger } from 'commons/src/main/ets/utils/Logger';
 
 const TAG = 'PermissionManager';
 

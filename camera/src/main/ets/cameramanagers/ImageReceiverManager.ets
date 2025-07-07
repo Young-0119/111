@@ -13,13 +13,13 @@
  * limitations under the License.
  */
 
-import { image } from "@kit.ImageKit";
-import { camera } from "@kit.CameraKit";
-import { BusinessError } from "@kit.BasicServicesKit";
-import { Logger } from "commons/src/main/ets/utils/Logger";
-import OutputManager, { CreateOutputConfig } from "./OutputManager";
-import { display } from "@kit.ArkUI";
-import CameraConstant from "../constants/CameraConstants";
+import { image } from '@kit.ImageKit';
+import { camera } from '@kit.CameraKit';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { Logger } from 'commons/src/main/ets/utils/Logger';
+import OutputManager, { CreateOutputConfig } from './OutputManager';
+import { display } from '@kit.ArkUI';
+import CameraConstant from '../constants/CameraConstants';
 
 const TAG = 'ImageReceiverManager';
 
@@ -82,7 +82,7 @@ export class ImageReceiverManager implements OutputManager {
     if (stride === width) {
       return await image.createPixelMap(imgComponent.byteBuffer, {
         size: { height: height, width: width },
-        srcPixelFormat: 8,
+        srcPixelFormat: image.PixelMapFormat.NV21,
       });
     }
     const dstBufferSize = width * height * 1.5
@@ -93,7 +93,7 @@ export class ImageReceiverManager implements OutputManager {
     }
     return await image.createPixelMap(dstArr.buffer, {
       size: { height: height, width: width },
-      srcPixelFormat: 8,
+      srcPixelFormat: image.PixelMapFormat.NV21,
     });
   }
 
@@ -115,7 +115,9 @@ export class ImageReceiverManager implements OutputManager {
             const stride = imgComponent.rowStride;
             Logger.info(TAG, `getComponent with width:${width} height:${height} stride:${stride}`);
             const pixelMap = await this.getPixelMap(imgComponent, width, height, stride);
-            await pixelMap.rotate(this.getRotate());
+            const displayRotation = display.getDefaultDisplaySync().rotation;
+            const rotation = this.output!.getPreviewRotation(displayRotation * camera.ImageRotation.ROTATION_90);
+            await pixelMap.rotate(rotation);
             if (this.position === camera.CameraPosition.CAMERA_POSITION_FRONT) {
               await pixelMap.flip(true, false);
             }

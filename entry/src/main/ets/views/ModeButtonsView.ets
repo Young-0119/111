@@ -13,8 +13,8 @@
  * limitations under the License.
  */
 
-import { CameraManager, PhotoManager, VideoManager } from "camera";
-import PreviewViewModel, { CameraMode } from "../viewmodels/PreviewViewModel";
+import { CameraManager, PhotoManager, VideoManager } from 'camera';
+import PreviewViewModel, { CameraMode } from '../viewmodels/PreviewViewModel';
 
 export interface CameraModeButton {
   title: ResourceStr;
