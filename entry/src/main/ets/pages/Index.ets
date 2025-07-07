@@ -23,7 +23,7 @@ import SettingButtonsView from '../views/SettingButtonsView';
 import OperateButtonsView from '../views/OperateButtonsView';
 import { sensor } from '@kit.SensorServiceKit';
 import { common } from '@kit.AbilityKit';
-import { display, window } from '@kit.ArkUI';
+import { display } from '@kit.ArkUI';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
 import { CameraManager,
   GridLine,
@@ -93,7 +93,7 @@ struct Index {
   private setPreviewSize: () => void = () => { this.previewVM.setPreviewSize(); }
 
   async aboutToAppear() {
-    sensor.on(sensor.SensorId.ACCELEROMETER, (data) => {
+    sensor.on(sensor.SensorId.GRAVITY, (data) => {
       this.acc = data;
     }, { interval: 100 * 1000 * 1000 }); // 100ms
     this.initSleepTimer();

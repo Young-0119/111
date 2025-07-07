@@ -1,7 +1,7 @@
-import CameraConstant from "../constants/Constants";
-import { camera } from "@kit.CameraKit";
-import WindowUtil from "../utils/WindowUtil";
-import { display } from "@kit.ArkUI";
+import CameraConstant from '../constants/Constants';
+import { camera } from '@kit.CameraKit';
+import WindowUtil from '../utils/WindowUtil';
+import { display } from '@kit.ArkUI';
 
 export enum CameraMode {
   PHOTO,

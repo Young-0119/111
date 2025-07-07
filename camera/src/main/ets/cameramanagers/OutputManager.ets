@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import { camera } from "@kit.CameraKit";
+import { camera } from '@kit.CameraKit';
 
 export interface CreateOutputConfig {
   cameraManager: camera.CameraManager;

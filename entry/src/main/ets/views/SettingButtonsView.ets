@@ -13,10 +13,10 @@
  * limitations under the License.
  */
 
-import { camera } from "@kit.CameraKit";
-import { AVRecorderState, CameraManager, PhotoManager, PreviewManager, VideoManager } from "camera";
-import { showToast } from "../utils/CommonUtil";
-import PreviewViewModel from "../viewmodels/PreviewViewModel";
+import { camera } from '@kit.CameraKit';
+import { AVRecorderState, CameraManager, PhotoManager, PreviewManager, VideoManager } from 'camera';
+import { showToast } from '../utils/CommonUtil';
+import PreviewViewModel from '../viewmodels/PreviewViewModel';
 
 interface FlashItem {
   mode: camera.FlashMode;

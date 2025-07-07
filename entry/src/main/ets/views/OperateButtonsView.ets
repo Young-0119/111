@@ -13,11 +13,11 @@
  * limitations under the License.
  */
 
-import { image } from "@kit.ImageKit";
-import { common } from "@kit.AbilityKit";
-import { camera } from "@kit.CameraKit";
-import PreviewViewModel from "../viewmodels/PreviewViewModel";
-import { AVRecorderState, CameraManager, PhotoManager, VideoManager } from "camera";
+import { image } from '@kit.ImageKit';
+import { common } from '@kit.AbilityKit';
+import { camera } from '@kit.CameraKit';
+import PreviewViewModel from '../viewmodels/PreviewViewModel';
+import { AVRecorderState, CameraManager, PhotoManager, VideoManager } from 'camera';
 
 @Component
 struct OperateButtonsView {
@@ -65,18 +65,18 @@ struct OperateButtonsView {
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       if (this.photoDelayTime) {
-        this.isDelayTakePhoto = true
-        this.photoRemainder = this.photoDelayTime
+        this.isDelayTakePhoto = true;
+        this.photoRemainder = this.photoDelayTime;
         this.photoDelayTimer = setInterval(()=>{
           this.photoRemainder--;
           if(this.photoRemainder === 0){
-            this.photoManager.capture(this.previewVM.isFront)
-            this.isDelayTakePhoto = false
-            clearTimeout(this.photoDelayTimer)
+            this.photoManager.capture(this.previewVM.isFront);
+            this.isDelayTakePhoto = false;
+            clearTimeout(this.photoDelayTimer);
           }
         },1000)
       } else {
-        this.photoManager.capture(this.previewVM.isFront)
+        this.photoManager.capture(this.previewVM.isFront);
       }
     })
   }
@@ -103,7 +103,7 @@ struct OperateButtonsView {
     })
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
-      this.videoManager.start()
+      this.videoManager.start();
     })
   }
 
@@ -149,7 +149,7 @@ struct OperateButtonsView {
       .borderRadius('50%')
       .symbolEffect(new ReplaceSymbolEffect(EffectScope.WHOLE), true)
       .onClick(async () => {
-        this.videoManager.pause()
+        this.videoManager.pause();
       })
   }
 
@@ -164,7 +164,7 @@ struct OperateButtonsView {
       .borderColor(Color.White)
       .borderRadius('50%')
       .onClick(async () => {
-        this.videoManager.resume()
+        this.videoManager.resume();
       })
   }
 

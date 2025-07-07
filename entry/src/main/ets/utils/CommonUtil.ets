@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-import { Point } from "@kit.TestKit"
-import { camera } from "@kit.CameraKit";
-import { display } from "@kit.ArkUI";
+import { Point } from '@kit.TestKit';
+import { camera } from '@kit.CameraKit';
+import { display } from '@kit.ArkUI';
 
 export function limitNumberInRange(src: number, range: number[]) {
   if (range.length < 2) return src;

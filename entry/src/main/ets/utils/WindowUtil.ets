@@ -13,8 +13,8 @@
  * limitations under the License.
  */
 
-import { display, window } from "@kit.ArkUI";
-import { Logger } from "commons/src/main/ets/utils/Logger";
+import { display, window } from '@kit.ArkUI';
+import { Logger } from 'commons/src/main/ets/utils/Logger';
 
 const TAG = 'WindowUtil'
 
