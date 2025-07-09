@@ -41,7 +41,8 @@ export class ImageReceiverManager implements OutputManager {
       .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
       .find(pf => {
         const pfDisplayRatio = pf.size.width / pf.size.height;
-        return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE;
+        return pf.format === config.profile.format
+          && Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE;
       });
     if (!previewProfile) {
       Logger.error(TAG, 'Failed to get preview profile');

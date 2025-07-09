@@ -33,7 +33,8 @@ export class PreviewManager implements OutputManager {
       .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
       .find(pf => {
         const pfDisplayRatio = pf.size.width / pf.size.height;
-        return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE;
+        return pf.format === config.profile.format
+          && Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE;
       });
     if (!previewProfile) {
       Logger.error(TAG_LOG, 'Failed to get preview profile');
@@ -82,7 +83,7 @@ export class PreviewManager implements OutputManager {
     try {
       this.output?.setFrameRate(minFps, maxFps);
     } catch(e) {
-      Logger.error(TAG_LOG, 'setActiveFrameRate error ' + JSON.stringify(e));
+      Logger.error(TAG_LOG, 'setFrameRate error ' + JSON.stringify(e));
     }
   }
 }
