@@ -22,6 +22,7 @@ import { image } from '@kit.ImageKit';
 import { Logger } from 'commons/src/main/ets/utils/Logger';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
+import { colorSpaceManager } from '@kit.ArkGraphics2D';
 
 const LOG_TAG = 'PhotoManager';
 
@@ -140,38 +141,41 @@ export class PhotoManager implements OutputManager {
         Logger.error(LOG_TAG, 'getPhoto failed');
         return;
       }
-      let imageObj: image.Image = photo.main;
-      imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, component: image.Component) => {
-        Logger.info(LOG_TAG, 'getComponent start');
-        if (errCode || component === undefined) {
-          Logger.error(LOG_TAG, 'getComponent failed');
-          return;
-        }
-        let buffer: ArrayBuffer;
-        if (component.byteBuffer) {
-          buffer = component.byteBuffer;
-        } else {
-          Logger.error(LOG_TAG, 'byteBuffer is null');
-          return;
-        }
-        let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
-        let extension: string = 'jpg';
-        let options: photoAccessHelper.CreateOptions = {
-          title: 'testPhoto'
-        }
-        let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
-          photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
-        assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
-        assetChangeRequest.saveCameraPhoto();
-        let accessHelper: photoAccessHelper.PhotoAccessHelper =
-          photoAccessHelper.getPhotoAccessHelper(context);
-        await accessHelper.applyChanges(assetChangeRequest);
-        let imageSource = image.createImageSource(buffer);
-        let pixelmap = imageSource.createPixelMapSync();
-        this.callback(pixelmap, assetChangeRequest.getAsset().uri);
-        accessHelper.release();
-        imageObj.release();
-      });
+      this.mediaLibSavePhotoSingle(photo.main, context)
+    });
+  }
+
+  mediaLibSavePhotoSingle(imageObj: image.Image, context: Context) {
+    imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, component: image.Component) => {
+      Logger.info(LOG_TAG, 'getComponent start');
+      if (errCode || component === undefined) {
+        Logger.error(LOG_TAG, 'getComponent failed');
+        return;
+      }
+      let buffer: ArrayBuffer;
+      if (component.byteBuffer) {
+        buffer = component.byteBuffer;
+      } else {
+        Logger.error(LOG_TAG, 'byteBuffer is null');
+        return;
+      }
+      let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
+      let extension: string = 'jpg';
+      let options: photoAccessHelper.CreateOptions = {
+        title: 'testPhoto'
+      }
+      let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
+        photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
+      assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
+      assetChangeRequest.saveCameraPhoto();
+      let accessHelper: photoAccessHelper.PhotoAccessHelper =
+        photoAccessHelper.getPhotoAccessHelper(context);
+      await accessHelper.applyChanges(assetChangeRequest);
+      let imageSource = image.createImageSource(buffer);
+      let pixelmap = imageSource.createPixelMapSync();
+      this.callback(pixelmap, assetChangeRequest.getAsset().uri);
+      accessHelper.release();
+      imageObj.release();
     });
   }
 
@@ -251,6 +255,29 @@ export class PhotoManager implements OutputManager {
       }
     }
     photoSession.setZoomRatio(zoomRatio || photoZoomRatio);
+  }
+
+  getSupportedColorSpaces(session: camera.PhotoSession): Array<colorSpaceManager.ColorSpace> {
+    let colorSpaces: Array<colorSpaceManager.ColorSpace> = [];
+    try {
+      colorSpaces = session.getSupportedColorSpaces();
+    } catch (error) {
+      let err = error as BusinessError;
+      Logger.error(LOG_TAG,`The getSupportedColorSpaces call failed. error code: ${err.code}`);
+    }
+    return colorSpaces;
+  }
+
+  setColorSpaceBeforeCommitConfig(session: camera.PhotoSession, isHdr: boolean): void {
+    let colorSpace: colorSpaceManager.ColorSpace =
+      isHdr ? colorSpaceManager.ColorSpace.DISPLAY_P3 : colorSpaceManager.ColorSpace.SRGB;
+    let colorSpaces: Array<colorSpaceManager.ColorSpace> = this.getSupportedColorSpaces(session);
+    let isSupportedColorSpaces = colorSpaces.indexOf(colorSpace) >= 0;
+    if (isSupportedColorSpaces) {
+      session.setColorSpace(colorSpace);
+    } else {
+      Logger.info(LOG_TAG,`colorSpace: ${colorSpace} is not support`);
+    }
   }
 
   public async capture(isFront: boolean) {
