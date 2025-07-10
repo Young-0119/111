@@ -118,9 +118,11 @@ export class ImageReceiverManager implements OutputManager {
             const pixelMap = await this.getPixelMap(imgComponent, width, height, stride);
             const displayRotation = display.getDefaultDisplaySync().rotation;
             const rotation = this.output!.getPreviewRotation(displayRotation * camera.ImageRotation.ROTATION_90);
-            await pixelMap.rotate(rotation);
             if (this.position === camera.CameraPosition.CAMERA_POSITION_FRONT) {
+              await pixelMap.rotate((rotation + 180) % 360);
               await pixelMap.flip(true, false);
+            } else {
+              await pixelMap.rotate(rotation);
             }
             this.callback(pixelMap);
           } else {
