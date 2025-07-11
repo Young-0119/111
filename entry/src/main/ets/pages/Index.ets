@@ -99,7 +99,7 @@ struct Index {
     this.initSleepTimer();
     this.registerApplicationStateChange();
     this.addOrientationChangeEventListener();
-    display.on('foldStatusChange', () => { this.onFoldStatusChange() })
+    display.on('foldStatusChange', () => { this.onFoldStatusChange() });
   }
 
   aboutToDisappear(): void {
