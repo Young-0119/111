@@ -41,7 +41,8 @@ export class ImageReceiverManager implements OutputManager {
       .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
       .find(pf => {
         const pfDisplayRatio = pf.size.width / pf.size.height;
-        return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE;
+        return pf.format === config.profile.format
+          && Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE;
       });
     if (!previewProfile) {
       Logger.error(TAG, 'Failed to get preview profile');
@@ -115,11 +116,17 @@ export class ImageReceiverManager implements OutputManager {
             const stride = imgComponent.rowStride;
             Logger.info(TAG, `getComponent with width:${width} height:${height} stride:${stride}`);
             const pixelMap = await this.getPixelMap(imgComponent, width, height, stride);
-            const displayRotation = display.getDefaultDisplaySync().rotation;
-            const rotation = this.output!.getPreviewRotation(displayRotation * camera.ImageRotation.ROTATION_90);
-            await pixelMap.rotate(rotation);
+            const displayRotation = display.getDefaultDisplaySync().rotation * camera.ImageRotation.ROTATION_90;
+            const rotation = this.output!.getPreviewRotation(displayRotation);
             if (this.position === camera.CameraPosition.CAMERA_POSITION_FRONT) {
+              if (displayRotation === 90 || displayRotation === 270) {
+                await pixelMap.rotate((rotation + 180) % 360);
+              } else {
+                await pixelMap.rotate(rotation);
+              }
               await pixelMap.flip(true, false);
+            } else {
+              await pixelMap.rotate(rotation);
             }
             this.callback(pixelMap);
           } else {

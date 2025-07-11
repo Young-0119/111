@@ -106,7 +106,7 @@ export class CameraManager {
 
   getCameraDevice(cameraPosition: camera.CameraPosition) {
     const cameraDevices = this.cameraManager.getSupportedCameras();
-    const device = cameraDevices?.find(device => device.cameraPosition === cameraPosition);
+    const device = cameraDevices?.find(device => device.cameraPosition === cameraPosition) || cameraDevices[0];
     if (!device) {
       Logger.error(TAG, `Failed to get camera device. cameraPosition: ${cameraPosition}}`);
     }

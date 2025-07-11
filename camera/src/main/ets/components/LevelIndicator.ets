@@ -21,8 +21,8 @@ export struct LevelIndicator {
   @Prop acc: sensor.AccelerometerResponse;
 
   getRotate() {
-    const orientation = display.getDefaultDisplaySync().orientation;
-    if (orientation === display.Orientation.LANDSCAPE || orientation === display.Orientation.LANDSCAPE_INVERTED) {
+    const rotation = display.getDefaultDisplaySync().rotation * 90;
+    if (rotation === 90 || rotation === 270) {
       return -Math.atan2(-this.acc.y, this.acc.x) * (180 / Math.PI);
     }
     return -Math.atan2(-this.acc.x, this.acc.y) * (180 / Math.PI);

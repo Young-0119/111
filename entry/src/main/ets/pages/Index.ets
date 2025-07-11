@@ -99,6 +99,7 @@ struct Index {
     this.initSleepTimer();
     this.registerApplicationStateChange();
     this.addOrientationChangeEventListener();
+    display.on('foldStatusChange', () => { this.onFoldStatusChange() })
   }
 
   aboutToDisappear(): void {
@@ -135,6 +136,12 @@ struct Index {
 
   closePreviewBlur() {
     this.blurRadius = 0;
+  }
+
+  async onFoldStatusChange() {
+    await this.cameraManager.release();
+    await this.startCamera();
+    this.syncButtonSettings();
   }
 
   registerApplicationStateChange() {
@@ -329,11 +336,9 @@ struct Index {
   }
 
   getPreviewImageWidth() {
-    const orientation = display.getDefaultDisplaySync().orientation;
-    const isLandscape = orientation === display.Orientation.LANDSCAPE_INVERTED
-      || orientation === display.Orientation.LANDSCAPE;
+    const rotation = display.getDefaultDisplaySync().rotation * 90;
     const ratio = this.previewVM.getPreviewRatio();
-    const displayRatio = isLandscape ? 1 / ratio : ratio;
+    const displayRatio = rotation === 90 || rotation === 270 ? 1 / ratio : ratio;
     return this.PreviewImageHeight / displayRatio;
   }
 

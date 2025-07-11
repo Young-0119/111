@@ -83,15 +83,15 @@ export function showToast(
 }
 
 export function calCameraPoint(eventX: number, eventY: number, width: number, height: number): camera.Point {
-  const orientation = display.getDefaultDisplaySync().orientation;
-  if (orientation === display.Orientation.PORTRAIT) {
+  const displayRotation = display.getDefaultDisplaySync().rotation * 90;
+  if (displayRotation === 0) {
     return { x: eventY / height, y: 1 - eventX / width };
   }
-  if (orientation === display.Orientation.LANDSCAPE) {
-    return { x: eventX / width, y: eventY / height };
+  if (displayRotation === 90) {
+    return { x: 1 - eventX / width, y: 1 - eventY / height };
   }
-  if (orientation === display.Orientation.PORTRAIT_INVERTED) {
+  if (displayRotation === 180) {
     return { x: 1 - eventY / height, y: eventX / width };
   }
-  return { x: 1 - eventX / width, y: 1 - eventY / height };
+  return { x: eventX / width, y: eventY / height };
 }

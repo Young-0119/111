@@ -43,19 +43,17 @@ class PreviewViewModel {
       : camera.CameraPosition.CAMERA_POSITION_BACK;
   }
 
-  getProfile() {
+  getProfile(cameraOrientation: number = 90): camera.Profile {
     const displaySize: Size = WindowUtil.getMaxDisplaySize(this.getPreviewRatio());
-    const orientation = display.getDefaultDisplaySync().orientation;
-    const isLandscape = orientation === display.Orientation.LANDSCAPE_INVERTED
-      || orientation === display.Orientation.LANDSCAPE;
-    const profile: camera.Profile = {
+    const displayRotation = display.getDefaultDisplaySync().rotation * 90;
+    const isRevert = (cameraOrientation + displayRotation) % 180 !== 0;
+    return {
       format: camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP,
       size: {
-        height: isLandscape ? displaySize.height : displaySize.width,
-        width: isLandscape ? displaySize.width : displaySize.height
+        height: isRevert ? displaySize.width : displaySize.height,
+        width: isRevert ? displaySize.height : displaySize.width
       }
     };
-    return profile;
   }
 
   setPreviewSize() {
