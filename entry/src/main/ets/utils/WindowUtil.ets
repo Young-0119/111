@@ -33,7 +33,8 @@ class WindowUtil {
     const defaultDisplay: display.Display = display.getDefaultDisplaySync();
     const windowWidth: number = defaultDisplay.width;
     const windowHeight: number = defaultDisplay.height;
-    if (windowWidth > windowHeight) {
+    const rotation = display.getDefaultDisplaySync().rotation * 90;
+    if (rotation === 90 || rotation === 270) {
       ratio = 1 / ratio;
     }
     // Calculate the height based on the screen width.
