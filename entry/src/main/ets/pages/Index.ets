@@ -118,6 +118,7 @@ struct Index {
 
   initSleepTimer() {
     this.sleepTimer = new RefreshableTimer(() => {
+      this.previewVM.openPreviewBlur();
       this.isSleeping = true;
       this.cameraManager.release();
     }, 30 * 1000);
@@ -141,6 +142,7 @@ struct Index {
         this.syncButtonSettings();
       },
       onApplicationBackground: () => {
+        this.previewVM.openPreviewBlur();
         this.cameraManager.release();
       }
     })
@@ -173,8 +175,7 @@ struct Index {
   async startCamera() {
     const cameraPosition = this.previewVM.getCameraPosition();
     const sceneMode = this.previewVM.getSceneMode();
-    const profile = this.previewVM.getProfile();
-    await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, profile);
+    await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
   }
 
   exitApp() {

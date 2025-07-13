@@ -45,7 +45,7 @@ class PreviewViewModel {
       : camera.CameraPosition.CAMERA_POSITION_BACK;
   }
 
-  getProfile(cameraOrientation: number = 90): camera.Profile {
+  getProfile: (cameraOrientation: number) => camera.Profile = cameraOrientation => {
     const displaySize: Size = WindowUtil.getMaxDisplaySize(this.getPreviewRatio());
     const displayRotation = display.getDefaultDisplaySync().rotation * 90;
     const isRevert = (cameraOrientation + displayRotation) % 180 !== 0;

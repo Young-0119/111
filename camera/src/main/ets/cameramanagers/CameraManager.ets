@@ -50,7 +50,7 @@ export class CameraManager {
     xComponentSurfaceId: string,
     cameraPosition: camera.CameraPosition,
     sceneMode: camera.SceneMode,
-    profile: camera.Profile
+    getProfile: (cameraOrientation: number) => camera.Profile
   ) {
     try {
       const device = this.getCameraDevice(cameraPosition);
@@ -66,7 +66,7 @@ export class CameraManager {
         cameraManager: this.cameraManager,
         device,
         sceneMode,
-        profile,
+        profile: getProfile(device.cameraOrientation),
         surfaceId: xComponentSurfaceId
       };
       for (const outputManager of this.outputManagers) {
