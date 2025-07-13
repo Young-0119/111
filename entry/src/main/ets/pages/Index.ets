@@ -133,7 +133,7 @@ struct Index {
     const observer = this.getUIContext().getUIObserver();
     observer.on('willClick', () => {
       this.sleepTimer?.refresh();
-    })
+    });
   }
   // [End initSleepTimer]
 

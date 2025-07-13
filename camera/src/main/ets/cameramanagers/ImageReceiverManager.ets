@@ -89,7 +89,7 @@ export class ImageReceiverManager implements OutputManager {
         srcPixelFormat: image.PixelMapFormat.NV21,
       });
     }
-    const dstBufferSize = width * height * 1.5
+    const dstBufferSize = width * height * 1.5;
     const dstArr = new Uint8Array(dstBufferSize);
     for (let j = 0; j < height * 1.5; j++) {
       const srcBuf = new Uint8Array(imgComponent.byteBuffer, j * stride, width);
@@ -149,11 +149,11 @@ export class ImageReceiverManager implements OutputManager {
           Logger.info(TAG, 'image process done');
           // [EndExclude onImageArrival]
           // [EndExclude nextImage]
-        })
+        });
         // [End release]
         // [End nextImage]
-      })
-    })
+      });
+    });
   }
   // [End onImageArrival]
 }
