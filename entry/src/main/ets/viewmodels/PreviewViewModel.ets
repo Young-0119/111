@@ -1,7 +1,7 @@
 import CameraConstant from '../constants/Constants';
 import { camera } from '@kit.CameraKit';
 import WindowUtil from '../utils/WindowUtil';
-import { display } from '@kit.ArkUI';
+import { curves, display } from '@kit.ArkUI';
 
 export enum CameraMode {
   PHOTO,
@@ -20,6 +20,8 @@ class PreviewViewModel {
   previewSize: Size = WindowUtil.getMaxDisplaySize(CameraConstant.RATIO_PHOTO);
   rates?: number[] = [];
   currentRate: number = 0;
+  blurRadius: number = 0;
+  blurRotation: RotateOptions = { y: 0.5, angle: 0};
 
   constructor(uiContext: UIContext) {
     this.uiContext = uiContext;
@@ -88,6 +90,50 @@ class PreviewViewModel {
 
   isCurrentCameraMode(mode: CameraMode) {
     return this.cameraMode === mode;
+  }
+
+  openPreviewBlur() {
+    animateToImmediately({
+      duration: 200,
+      curve: Curve.Friction
+    }, () => {
+      this.blurRadius = 150;
+    });
+  }
+
+  rotatePreviewBlur() {
+    animateToImmediately({
+      delay: 50,
+      duration: 200,
+      curve: curves.cubicBezierCurve(0.2, 0, 0.83, 1),
+      onFinish: () => {
+        this.rotatePreviewBlurSecond();
+      }
+    }, () => {
+      this.blurRotation = { y: 0.5, angle: 90 };
+    });
+  }
+
+  rotatePreviewBlurSecond() {
+    this.blurRotation = { y: 0.5, angle: 270 };
+    animateToImmediately({
+      duration: 200,
+      curve: curves.cubicBezierCurve(0.17, 0, 0.2, 1),
+      onFinish: () => {
+        this.blurRotation = { y: 0.5, angle: 0 };
+      }
+    }, () => {
+      this.blurRotation = { y: 0.5, angle: 360 };
+    });
+  }
+
+  closePreviewBlur() {
+    animateToImmediately({
+      duration: 200,
+      curve: Curve.FastOutSlowIn
+    }, () => {
+      this.blurRadius = 0;
+    });
   }
 }
 

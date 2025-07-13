@@ -213,6 +213,8 @@ struct OperateButtonsView {
       .width(48)
       .height(48)
       .onClick(async () => {
+        this.previewVM.openPreviewBlur();
+        this.previewVM.rotatePreviewBlur();
         this.previewVM.isFront = !this.previewVM.isFront;
         const cameraPosition = this.previewVM.getCameraPosition();
         const profile: camera.Profile = this.previewVM.getProfile();

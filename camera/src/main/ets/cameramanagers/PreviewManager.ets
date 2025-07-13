@@ -24,6 +24,11 @@ const TAG_LOG = 'PreviewManager'
 export class PreviewManager implements OutputManager {
   output?: camera.PreviewOutput;
   isActive: boolean = true;
+  onPreviewStart: () => void = () => {};
+
+  constructor(onPreviewStart: () => void) {
+    this.onPreviewStart = onPreviewStart;
+  }
 
   async createOutput(config: CreateOutputConfig) {
     const cameraOutputCap = config.cameraManager.getSupportedOutputCapability(config.device, config.sceneMode);
@@ -57,6 +62,7 @@ export class PreviewManager implements OutputManager {
         return;
       }
       Logger.info(TAG_LOG, 'Preview frame started');
+      this.onPreviewStart();
     });
   }
 

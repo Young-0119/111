@@ -51,7 +51,7 @@ struct Index {
   @State isSinglePhoto: boolean = false;
   @State isLivePhoto: boolean = false;
   private photoManager: PhotoManager = new PhotoManager(this.context, true, this.isSinglePhoto);
-  private previewManager: PreviewManager = new PreviewManager();
+  private previewManager: PreviewManager = new PreviewManager(() => { this.onPreviewStart() });
   private imageReceiverManager: ImageReceiverManager = new ImageReceiverManager(px => {
     this.onImageReceiver(px);
   });
@@ -79,8 +79,6 @@ struct Index {
   @State currentZoom: number = 1;
   @State isZoomPinching: boolean = false;
   private originZoomBeforePinch: number = 1; // record zoom after pinch, sale base it.
-
-  @State blurRadius: number = 0;
 
   @State previewImage: PixelMap | ResourceStr = '';
   private PreviewImageHeight: number = 80;
@@ -130,14 +128,6 @@ struct Index {
     })
   }
 
-  openPreviewBlur() {
-    this.blurRadius = 150;
-  }
-
-  closePreviewBlur() {
-    this.blurRadius = 0;
-  }
-
   async onFoldStatusChange() {
     await this.cameraManager.release();
     await this.startCamera();
@@ -154,6 +144,10 @@ struct Index {
         this.cameraManager.release();
       }
     })
+  }
+
+  onPreviewStart() {
+    this.previewVM.closePreviewBlur();
   }
 
   initZooms() {
@@ -274,7 +268,8 @@ struct Index {
     .width(this.previewVM.getPreviewWidth())
     .height(this.previewVM.getPreviewHeight())
     .margin({ top: this.previewVM.getPreviewTop() })
-    .blur(this.blurRadius)
+    .blur(this.previewVM.blurRadius)
+    .rotate(this.previewVM.blurRotation)
   }
 
   @Builder

@@ -54,6 +54,7 @@ struct ModeButtonsView {
               if (this.previewVM.isCurrentCameraMode(modeBtn.mode)) {
                 return;
               }
+              this.previewVM.openPreviewBlur();
               this.previewVM.cameraMode = modeBtn.mode;
               this.previewVM.setPreviewSize();
               const sceneMode = this.previewVM.getSceneMode();
