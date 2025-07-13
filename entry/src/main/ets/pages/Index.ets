@@ -91,9 +91,7 @@ struct Index {
   private setPreviewSize: () => void = () => { this.previewVM.setPreviewSize(); }
 
   async aboutToAppear() {
-    sensor.on(sensor.SensorId.GRAVITY, (data) => {
-      this.acc = data;
-    }, { interval: 100 * 1000 * 1000 }); // 100ms
+    this.addGravityEventListener();
     this.initSleepTimer();
     this.registerApplicationStateChange();
     this.addOrientationChangeEventListener();
@@ -103,6 +101,14 @@ struct Index {
   aboutToDisappear(): void {
     this.removeOrientationChangeEventListener();
   }
+
+  // [Start addGravityEventListener]
+  addGravityEventListener() {
+    sensor.on(sensor.SensorId.GRAVITY, (data) => {
+      this.acc = data;
+    }, { interval: 100 * 1000 * 1000 }); // 100ms
+  }
+  // [End addGravityEventListener]
 
   addOrientationChangeEventListener() {
     this.windowClass.on('windowSizeChange', this.setPreviewSize);
@@ -116,6 +122,7 @@ struct Index {
     this.previewImage = pixelMap;
   }
 
+  // [Start initSleepTimer]
   initSleepTimer() {
     this.sleepTimer = new RefreshableTimer(() => {
       this.previewVM.openPreviewBlur();
@@ -128,6 +135,7 @@ struct Index {
       this.sleepTimer?.refresh();
     })
   }
+  // [End initSleepTimer]
 
   async onFoldStatusChange() {
     await this.cameraManager.release();
@@ -135,17 +143,33 @@ struct Index {
     this.syncButtonSettings();
   }
 
+  // [Start registerApplicationStateChange]
   registerApplicationStateChange() {
     this.applicationContext.on('applicationStateChange', {
       onApplicationForeground: async () => {
         await this.startCamera();
+        // [StartExclude registerApplicationStateChange]
         this.syncButtonSettings();
+        // [EndExclude registerApplicationStateChange]
       },
       onApplicationBackground: () => {
+        // [StartExclude registerApplicationStateChange]
         this.previewVM.openPreviewBlur();
+        // [EndExclude registerApplicationStateChange]
         this.cameraManager.release();
       }
     })
+  }
+
+  async startCamera() {
+    const cameraPosition = this.previewVM.getCameraPosition();
+    const sceneMode = this.previewVM.getSceneMode();
+    await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
+  }
+  // [End registerApplicationStateChange]
+
+  exitApp() {
+    this.applicationContext.killAllProcesses();
   }
 
   onPreviewStart() {
@@ -172,16 +196,6 @@ struct Index {
     };
   }
 
-  async startCamera() {
-    const cameraPosition = this.previewVM.getCameraPosition();
-    const sceneMode = this.previewVM.getSceneMode();
-    await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
-  }
-
-  exitApp() {
-    this.applicationContext.killAllProcesses();
-  }
-
   syncButtonSettings() {
     this.previewManager.setFrameRate(this.previewVM.currentRate, this.previewVM.currentRate);
     this.photoManager.enableMovingPhoto(this.isLivePhoto);
@@ -190,23 +204,34 @@ struct Index {
 
   @Builder
   preview() {
+    // [Start Stack]
     Stack({
       alignContent: Alignment.Center
     }) {
+      // [Start XComponent]
+      // [Start XComponent_gesture]
       XComponent({
         type: XComponentType.SURFACE,
         controller: this.previewVM.xComponentController
       })
+        // [StartExclude Stack]
+        // [StartExclude XComponent_gesture]
         .onLoad(async () => {
+          // [StartExclude XComponent]
           await PermissionManager.request(CameraConstant.PERMISSIONS, this.context)
             .catch(() => { this.exitApp() });
+          // [EndExclude XComponent]
           this.previewVM.surfaceId = this.previewVM.xComponentController.getXComponentSurfaceId();
           this.previewVM.setPreviewSize();
-          this.previewVM.xComponentController.setXComponentSurfaceRotation({ lock: true })
+          this.previewVM.xComponentController.setXComponentSurfaceRotation({ lock: true });
+          // [StartExclude XComponent]
           await this.startCamera();
           this.initZooms();
           this.initRates();
+          // [EndExclude XComponent]
         })
+        // [StartExclude XComponent_gesture]
+        // [End XComponent]
         .gesture(
           PinchGesture({ fingers: 2 })
             .onActionStart(() => {
@@ -222,6 +247,7 @@ struct Index {
               this.isZoomPinching = false;
             })
         )
+        // [End XComponent_gesture]
         .onClick(event => {
           this.isFocusBoxVisible = true;
           const previewSize = this.previewVM.previewSize;
@@ -238,11 +264,11 @@ struct Index {
           }, event)
           this.focusBoxTimer.refresh();
         })
-      // gird line
+      // [EndExclude Stack]
       if (this.isGridLineVisible) {
         GridLine()
       }
-      // level indicator
+      // [StartExclude Stack]
       if (this.isLevelIndicatorVisible) {
         LevelIndicator({
           acc: this.acc
@@ -262,7 +288,9 @@ struct Index {
           .fontWeight(FontWeight.Regular)
           .fontColor(Color.White)
       }
+      // [EndExclude Stack]
     }
+    // [End Stack]
     .alignRules({
       middle: { anchor: '__container__', align: HorizontalAlign.Center }
     })
@@ -273,6 +301,7 @@ struct Index {
     .rotate(this.previewVM.blurRotation)
   }
 
+  // [Start wakeupMask]
   @Builder
   wakeupMask() {
     Column() {
@@ -280,10 +309,12 @@ struct Index {
         .fontColor(Color.White)
         .opacity(0.6)
     }
+    // [StartExclude wakeupMask]
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Black)
     .justifyContent(FlexAlign.Center)
+    // [EndExclude wakeupMask]
     .onClick(async () => {
       this.isSleeping = false;
       this.sleepTimer?.refresh();
@@ -291,6 +322,7 @@ struct Index {
       this.syncButtonSettings();
     })
   }
+  // [End wakeupMask]
 
   @Builder
   gridLineButton() {

@@ -30,6 +30,7 @@ export class PreviewManager implements OutputManager {
     this.onPreviewStart = onPreviewStart;
   }
 
+  // [Start createOutput]
   async createOutput(config: CreateOutputConfig) {
     const cameraOutputCap = config.cameraManager.getSupportedOutputCapability(config.device, config.sceneMode);
     const displayRatio = config.profile.size.width / config.profile.size.height;
@@ -49,12 +50,14 @@ export class PreviewManager implements OutputManager {
     this.addOutputListener(this.output);
     return this.output;
   }
+  // [End createOutput]
 
   addOutputListener(output: camera.PreviewOutput) {
     this.addFrameStartEventListener(output);
     this.addFrameEndEventListener(output);
   }
 
+  // [Start onFrame]
   addFrameStartEventListener(output: camera.PreviewOutput) {
     output.on('frameStart', (err: BusinessError) => {
       if (err !== undefined && err.code !== 0) {
@@ -75,16 +78,22 @@ export class PreviewManager implements OutputManager {
       Logger.info(TAG_LOG, 'Preview frame end');
     });
   }
+  // [End onFrame]
 
+  // [Start release]
   async release() {
     await this.output?.release();
     this.output = undefined;
   }
+  // [End release]
 
+  // [Start getSupportedFrameRates]
   getSupportedFrameRates() {
     return this.output?.getSupportedFrameRates();
   }
+  // [End getSupportedFrameRates]
 
+  // [Start setFrameRate]
   setFrameRate(minFps: number, maxFps: number) {
     try {
       this.output?.setFrameRate(minFps, maxFps);
@@ -92,4 +101,5 @@ export class PreviewManager implements OutputManager {
       Logger.error(TAG_LOG, 'setFrameRate error ' + JSON.stringify(e));
     }
   }
+  // [End setFrameRate]
 }

@@ -23,9 +23,11 @@ export interface CreateOutputConfig {
   surfaceId?: string;
 }
 
+// [Start OutputManager]
 export default interface OutputManager {
   output?: camera.CameraOutput;
   isActive: boolean;
   createOutput: (config: CreateOutputConfig) => Promise<camera.CameraOutput | undefined>;
   release: () => Promise<void>;
 }
+// [End OutputManager]

@@ -13,7 +13,9 @@ export enum CameraMode {
  */
 class PreviewViewModel {
   private uiContext: UIContext;
+  // [Start isFront]
   isFront: boolean = false;
+  // [StartExclude isFront]
   cameraMode: CameraMode = CameraMode.PHOTO;
   xComponentController: XComponentController = new XComponentController();
   surfaceId: string = '';
@@ -27,6 +29,13 @@ class PreviewViewModel {
     this.uiContext = uiContext;
   }
 
+  getCameraPosition() {
+    return this.isFront
+      ? camera.CameraPosition.CAMERA_POSITION_FRONT
+      : camera.CameraPosition.CAMERA_POSITION_BACK;
+  }
+  // [EndExclude isFront]
+
   getPreviewRatio() {
     return this.cameraMode === CameraMode.PHOTO
       ? CameraConstant.RATIO_PHOTO
@@ -39,12 +48,7 @@ class PreviewViewModel {
       : camera.SceneMode.NORMAL_VIDEO;
   }
 
-  getCameraPosition() {
-    return this.isFront
-      ? camera.CameraPosition.CAMERA_POSITION_FRONT
-      : camera.CameraPosition.CAMERA_POSITION_BACK;
-  }
-
+  // [Start getProfile]
   getProfile: (cameraOrientation: number) => camera.Profile = cameraOrientation => {
     const displaySize: Size = WindowUtil.getMaxDisplaySize(this.getPreviewRatio());
     const displayRotation = display.getDefaultDisplaySync().rotation * 90;
@@ -57,7 +61,9 @@ class PreviewViewModel {
       }
     };
   }
+  // [End getProfile]
 
+  // [Start setPreviewSize]
   setPreviewSize() {
     const displaySize: Size = WindowUtil.getMaxDisplaySize(this.getPreviewRatio())
     this.previewSize = displaySize;
@@ -66,6 +72,7 @@ class PreviewViewModel {
       surfaceHeight: displaySize.height
     })
   }
+  // [End setPreviewSize]
 
   getPreviewTop() {
     const previewRatio = this.getPreviewRatio();

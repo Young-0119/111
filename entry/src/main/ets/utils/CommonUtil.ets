@@ -82,6 +82,7 @@ export function showToast(
   });
 }
 
+// [Start calCameraPoint]
 export function calCameraPoint(eventX: number, eventY: number, width: number, height: number): camera.Point {
   const displayRotation = display.getDefaultDisplaySync().rotation * 90;
   if (displayRotation === 0) {
@@ -95,3 +96,4 @@ export function calCameraPoint(eventX: number, eventY: number, width: number, he
   }
   return { x: eventX / width, y: eventY / height };
 }
+// [End calCameraPoint]
