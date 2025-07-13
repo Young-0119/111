@@ -40,7 +40,11 @@
       {
         "name": "ohos.permission.CAMERA",
         "reason": "$string:permission_CAMERA",
-        "usedScene": {}
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
       },
       // [StartExclude permissions]
       {

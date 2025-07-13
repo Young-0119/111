@@ -29,12 +29,13 @@ class PreviewViewModel {
     this.uiContext = uiContext;
   }
 
+  // [EndExclude isFront]
   getCameraPosition() {
     return this.isFront
       ? camera.CameraPosition.CAMERA_POSITION_FRONT
       : camera.CameraPosition.CAMERA_POSITION_BACK;
   }
-  // [EndExclude isFront]
+  // [End isFront]
 
   getPreviewRatio() {
     return this.cameraMode === CameraMode.PHOTO
@@ -65,12 +66,12 @@ class PreviewViewModel {
 
   // [Start setPreviewSize]
   setPreviewSize() {
-    const displaySize: Size = WindowUtil.getMaxDisplaySize(this.getPreviewRatio())
+    const displaySize: Size = WindowUtil.getMaxDisplaySize(this.getPreviewRatio());
     this.previewSize = displaySize;
     this.xComponentController.setXComponentSurfaceRect({
       surfaceWidth: displaySize.width,
       surfaceHeight: displaySize.height
-    })
+    });
   }
   // [End setPreviewSize]
 

@@ -43,6 +43,7 @@ export function toFixed(num: number, digit: number): string {
   return (Math.floor(num * scale) / scale).toFixed(digit);
 }
 
+// [Start getClampedChildPosition]
 // cal absolute position in parent area
 export function getClampedChildPosition(childSize: Size, parentSize: Size, point: Point): Edges {
   // center point
@@ -66,6 +67,7 @@ export function getClampedChildPosition(childSize: Size, parentSize: Size, point
   }
   return { left, top };
 }
+// [End getClampedChildPosition]
 
 export function showToast(
   UIContext: UIContext,
