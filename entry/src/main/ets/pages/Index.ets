@@ -199,7 +199,6 @@ struct Index {
   }
 
   flashBlackAnim() {
-    console.info('flashBlackAnim E');
     this.flashBlackOpacity = 1;
     this.isShowBlack = true;
     animateToImmediately({
@@ -208,7 +207,6 @@ struct Index {
       onFinish: () => {
         this.isShowBlack = false;
         this.flashBlackOpacity = 1;
-        console.info('flashBlackAnim X');
       }
     }, () => {
       this.flashBlackOpacity = 0;
@@ -216,7 +214,6 @@ struct Index {
   }
 
   onCaptureClick(): void {
-    console.info('onCaptureClick');
     this.flashBlackAnim();
   }
 
