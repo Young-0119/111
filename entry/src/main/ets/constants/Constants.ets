@@ -23,7 +23,8 @@ class CameraConstant {
     'ohos.permission.MICROPHONE',
     'ohos.permission.MEDIA_LOCATION',
     'ohos.permission.WRITE_IMAGEVIDEO',
-    'ohos.permission.READ_IMAGEVIDEO'
+    'ohos.permission.READ_IMAGEVIDEO',
+    'ohos.permission.APPROXIMATELY_LOCATION'
   ];
   static readonly PROFILE_DIFFERENCE = 1e-10;
 }

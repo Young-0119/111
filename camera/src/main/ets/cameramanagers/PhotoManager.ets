@@ -19,9 +19,10 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { sensor } from '@kit.SensorServiceKit';
 import { Decimal } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
-import CameraConstant from '../constants/CameraConstants';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { geoLocationManager } from '@kit.LocationKit';
+import { colorSpaceManager } from '@kit.ArkGraphics2D';
 
 const LOG_TAG = 'PhotoManager';
 
@@ -57,8 +58,10 @@ export class PhotoManager implements OutputManager {
     return cameraPhotoOutput;
   }
 
+  // [Start create_photo_output]
   public createPhotoOutput(cameraManager: camera.CameraManager, cameraDevice: camera.CameraDevice,
     profile: camera.Profile) {
+    const PROFILE_DIFFERENCE = 1e-10;
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
     const cameraOutputCapability =
       cameraManager.getSupportedOutputCapability(cameraDevice, camera.SceneMode.NORMAL_PHOTO);
@@ -71,18 +74,26 @@ export class PhotoManager implements OutputManager {
           .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
           .find(pf => {
             const pfDisplayRatio = pf.size.width / pf.size.height;
-            return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE;
+            return Math.abs(pfDisplayRatio - displayRatio) <= PROFILE_DIFFERENCE &&
+              pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
           });
+        if (!PhotoProfile) {
+          hilog.error(0x0000, 'PhotoManager', 'Failed to get photo profile');
+          return;
+        }
         cameraPhotoOutput = cameraManager.createPhotoOutput(PhotoProfile);
       } catch (error) {
         let err = error as BusinessError;
-        Logger.error(LOG_TAG, `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
+        hilog.error(0x0000, 'PhotoManager', `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
       }
     }
     this.output = cameraPhotoOutput;
     return cameraPhotoOutput;
   }
 
+  // [End create_photo_output]
+
+  // [Start set_photo_cb_double]
   async mediaLibSavePhoto(photoAsset: photoAccessHelper.PhotoAsset,
     phAccessHelper: photoAccessHelper.PhotoAccessHelper): Promise<void> {
     try {
@@ -92,7 +103,7 @@ export class PhotoManager implements OutputManager {
       await phAccessHelper.applyChanges(assetChangeRequest);
       phAccessHelper.release();
     } catch (err) {
-      Logger.error(LOG_TAG, `apply saveCameraPhoto failed with error: ${err.code}, ${err.message}`);
+      hilog.error(0x0000, 'photoManager', `apply saveCameraPhoto failed with error: ${err.code}, ${err.message}`);
     }
   }
 
@@ -101,16 +112,15 @@ export class PhotoManager implements OutputManager {
     class MediaDataHandler implements photoAccessHelper.MediaAssetDataHandler<ArrayBuffer> {
       onDataPrepared(data: ArrayBuffer) {
         if (data === undefined) {
-          Logger.error(LOG_TAG, 'Error occurred when preparing data');
+          hilog.error(0x0000, 'photoManager', 'Error occurred when preparing data');
           return;
         }
         let imageSource = image.createImageSource(data);
         imageSource.createPixelMap((err: BusinessError, data: image.PixelMap) => {
           if (err) {
-            Logger.info(LOG_TAG, `createPixelMap err:${err.code}`);
+            hilog.error(0x0000, 'photoManager', `createPixelMap err:${err.code}`);
             return;
           }
-          Logger.info(LOG_TAG, 'createPixelMap is called');
           callback(data, photoAsset.uri);
         })
       }
@@ -133,47 +143,56 @@ export class PhotoManager implements OutputManager {
       });
   }
 
+  // [End set_photo_cb_double]
+
+  // [Start set_photo_cb_single]
   setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
     photoOutput.on('photoAvailable', (errCode: BusinessError, photo: camera.Photo): void => {
-      Logger.info(LOG_TAG, 'getPhoto start');
       if (errCode || photo === undefined) {
-        Logger.error(LOG_TAG, 'getPhoto failed');
+        hilog.error(0x0000, 'photoManager', 'getPhoto failed');
         return;
       }
-      let imageObj: image.Image = photo.main;
-      imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, component: image.Component) => {
-        Logger.info(LOG_TAG, 'getComponent start');
-        if (errCode || component === undefined) {
-          Logger.error(LOG_TAG, 'getComponent failed');
-          return;
-        }
-        let buffer: ArrayBuffer;
-        if (component.byteBuffer) {
-          buffer = component.byteBuffer;
-        } else {
-          Logger.error(LOG_TAG, 'byteBuffer is null');
-          return;
-        }
-        let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
-        let extension: string = 'jpg';
-        let options: photoAccessHelper.CreateOptions = {
-          title: 'testPhoto'
-        }
-        let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
-          photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
-        assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
-        assetChangeRequest.saveCameraPhoto();
-        let accessHelper: photoAccessHelper.PhotoAccessHelper =
-          photoAccessHelper.getPhotoAccessHelper(context);
-        await accessHelper.applyChanges(assetChangeRequest);
-        let imageSource = image.createImageSource(buffer);
-        let pixelmap = imageSource.createPixelMapSync();
-        this.callback(pixelmap, assetChangeRequest.getAsset().uri);
-        accessHelper.release();
-        imageObj.release();
-      });
+      this.mediaLibSavePhotoSingle(context, photo.main)
     });
   }
+
+  // [End set_photo_cb_single]
+
+  // [Start save_photo_single]
+  mediaLibSavePhotoSingle(context: Context, imageObj: image.Image) {
+    imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, component: image.Component) => {
+      if (errCode || component === undefined) {
+        hilog.error(0x0000, 'photoManager', 'getComponent failed');
+        return;
+      }
+      let buffer: ArrayBuffer;
+      if (component.byteBuffer) {
+        buffer = component.byteBuffer;
+      } else {
+        hilog.error(0x0000, 'photoManager', 'byteBuffer is null');
+        return;
+      }
+      let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
+      let extension: string = 'jpg';
+      let options: photoAccessHelper.CreateOptions = {
+        title: 'testPhoto'
+      }
+      let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
+        photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
+      assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
+      assetChangeRequest.saveCameraPhoto();
+      let accessHelper: photoAccessHelper.PhotoAccessHelper =
+        photoAccessHelper.getPhotoAccessHelper(context);
+      await accessHelper.applyChanges(assetChangeRequest);
+      let imageSource = image.createImageSource(buffer);
+      let pixelmap = imageSource.createPixelMapSync();
+      this.callback(pixelmap, assetChangeRequest.getAsset().uri);
+      accessHelper.release();
+      imageObj.release();
+    });
+  }
+
+  // [End save_photo_single]
 
   setPhotoOutputCallback(isSingle: boolean) {
     if (!this.output) {
@@ -196,6 +215,27 @@ export class PhotoManager implements OutputManager {
     this.setPhotoZoomRatio(photoSession, zoomRatio || 0);
   }
 
+  // [Start set_color_space]
+  setColorSpaceBeforeCommitConfig(session: camera.PhotoSession, isHdr: boolean): void {
+    let colorSpace: colorSpaceManager.ColorSpace =
+      isHdr ? colorSpaceManager.ColorSpace.DISPLAY_P3 : colorSpaceManager.ColorSpace.SRGB;
+    let colorSpaces: Array<colorSpaceManager.ColorSpace> = [];
+    try {
+      colorSpaces = session.getSupportedColorSpaces();
+    } catch (error) {
+      let err = error as BusinessError;
+      hilog.error(0x0000, 'photoManager', `The getSupportedColorSpaces call failed. error code: ${err.code}`);
+    }
+    let isSupportedColorSpaces = colorSpaces.indexOf(colorSpace) >= 0;
+    if (isSupportedColorSpaces) {
+      session.setColorSpace(colorSpace);
+      let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
+    } else {
+      hilog.error(0x0000, 'photoManager', `colorSpace: ${colorSpace} is not support`);
+    }
+  }
+  // [End set_color_space]
+
   public checkFlash(photoSession: camera.PhotoSession) {
     let flashModeStatus: boolean = false;
     if (photoSession.hasFlash()) {
@@ -211,7 +251,7 @@ export class PhotoManager implements OutputManager {
       }
     } catch (error) {
       let err = error as BusinessError;
-      Logger.error(LOG_TAG, `Failed to hasFlash. error: ${JSON.stringify(err)}`);
+      hilog.error(0x0000, 'photoManager', `Failed to hasFlash. error: ${JSON.stringify(err)}`);
     }
   }
 
@@ -224,7 +264,8 @@ export class PhotoManager implements OutputManager {
       }
     } catch (error) {
       let err = error as BusinessError;
-      Logger.error(LOG_TAG, `Failed to check whether the focus mode is supported. error: ${JSON.stringify(err)}`);
+      hilog.error(0x0000, 'photoManager',
+        `Failed to check whether the focus mode is supported. error: ${JSON.stringify(err)}`);
     }
   }
 
@@ -233,7 +274,7 @@ export class PhotoManager implements OutputManager {
       photoSession.setFocusPoint(focusPoint);
     } catch (error) {
       let err = error as BusinessError;
-      Logger.error(LOG_TAG, `The setFocusPoint call failed. error code: ${err.code}`);
+      hilog.error(0x0000, 'photoManager', `The setFocusPoint call failed. error code: ${err.code}`);
     }
   }
 
@@ -247,28 +288,51 @@ export class PhotoManager implements OutputManager {
         }
       } catch (error) {
         let err = error as BusinessError;
-        Logger.error(LOG_TAG, `Failed to get the zoom ratio range. error: ${JSON.stringify(err)}`);
+        hilog.error(0x0000, 'photoManager', `Failed to get the zoom ratio range. error: ${JSON.stringify(err)}`);
       }
     }
     photoSession.setZoomRatio(zoomRatio || photoZoomRatio);
   }
 
+  // [Start get_photo_rotation]
+  getPhotoRotation(photoOutput: camera.PhotoOutput, deviceDegree: number): camera.ImageRotation {
+    let photoRotation: camera.ImageRotation = camera.ImageRotation.ROTATION_0;
+    try {
+      photoRotation = photoOutput.getPhotoRotation(deviceDegree);
+    } catch (error) {
+      let err = error as BusinessError;
+      hilog.error(0x0000, 'photoManager', `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
+    }
+    return photoRotation;
+  }
+
+  // [End get_photo_rotation]
+
+  // [Start capture_photo]
   public async capture(isFront: boolean) {
-    const rotation = await this.getPhotoRotation(isFront);
+    const degree = await this.getPhotoDegree();
+    const rotation = this.getPhotoRotation(this.output!, degree);
     let settings: camera.PhotoCaptureSetting = {
       quality: camera.QualityLevel.QUALITY_LEVEL_HIGH,
       rotation,
       mirror: isFront
     };
+    try {
+      const location = await geoLocationManager.getCurrentLocation();
+      settings.location = location;
+    } catch (error) {
+      let err = error as BusinessError;
+      hilog.error(0x0000, 'photoManager', `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
+    }
     this.output?.capture(settings, (err: BusinessError) => {
       if (err) {
-        Logger.error(LOG_TAG, `Failed to capture the photo. error: ${JSON.stringify(err)}`);
+        hilog.error(0x0000, 'photoManager', `Failed to capture the photo. error: ${JSON.stringify(err)}`);
         return;
       }
-
-      Logger.info(LOG_TAG, 'Callback invoked to indicate the photo capture request success.');
+      hilog.info(0x0000, 'photoManager', 'Callback invoked to indicate the photo capture request success.');
     });
   }
+  // [End capture_photo]
 
   private calculateDeviceDegree(x: number, y: number, z: number): number {
     let deviceDegree: number = 0;
@@ -283,46 +347,41 @@ export class PhotoManager implements OutputManager {
     return deviceDegree;
   }
 
-  private getPhotoRotation(isFront: boolean) {
+  private getPhotoDegree() {
     const promise: Promise<number> = new Promise(resolve => {
-      let rotation = camera.ImageRotation.ROTATION_0;
       sensor.once(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
         let degree = this.calculateDeviceDegree(data.x, data.y, data.z);
-        if (degree >= 0 && (degree <= 30 || degree >= 300)) {
-          rotation = camera.ImageRotation.ROTATION_0;
-        } else if (degree > 30 && degree <= 120) {
-          rotation = isFront ? camera.ImageRotation.ROTATION_270 : camera.ImageRotation.ROTATION_90;
-        } else if (degree > 120 && degree <= 210) {
-          rotation = camera.ImageRotation.ROTATION_180;
-        } else if (degree > 210 && degree < 300) {
-          rotation = isFront ? camera.ImageRotation.ROTATION_90 : camera.ImageRotation.ROTATION_270;
-        }
-        resolve(rotation);
+        resolve(degree);
       });
     })
     return promise;
   }
 
+  // [Start is_moving_photo]
   public isMovingPhotoSupported(photoOutput: camera.PhotoOutput): boolean {
     let isSupported: boolean = false;
     try {
       isSupported = photoOutput.isMovingPhotoSupported();
     } catch (error) {
       let err = error as BusinessError;
-      Logger.error(LOG_TAG, `The isMovingPhotoSupported call failed. error code: ${err.code}`);
+      hilog.error(0x0000, 'photoManager', `The isMovingPhotoSupported call failed. error code: ${err.code}`);
     }
     return isSupported;
   }
+  // [End is_moving_photo]
 
+  // [Start enable_moving_photo]
   public enableMovingPhoto(enabled: boolean): void {
     try {
       this.output?.enableMovingPhoto(enabled);
     } catch (error) {
       let err = error as BusinessError;
-      Logger.error(LOG_TAG, `The enableMovingPhoto call failed. error code: ${err.code}`);
+      hilog.error(0x0000, 'photoManager', `The enableMovingPhoto call failed. error code: ${err.code}`);
     }
   }
+  // [End enable_moving_photo]
 
+  // [Start photo_release]
   async release() {
     await this.output?.release();
     if (this.isSingle) {
@@ -332,4 +391,6 @@ export class PhotoManager implements OutputManager {
     }
     this.output = undefined;
   }
+
+  // [End photo_release]
 }

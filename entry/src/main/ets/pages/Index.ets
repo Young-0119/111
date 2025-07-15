@@ -30,6 +30,7 @@ import { CameraManager,
   ImageReceiverManager,
   LevelIndicator,
   PhotoManager, PreviewManager, VideoManager } from 'camera';
+import { curves } from '@kit.ArkUI';
 
 @Extend(SymbolGlyph)
 function funcButtonStyle() {
@@ -91,6 +92,10 @@ struct Index {
 
   @State acc: sensor.AccelerometerResponse = { x: 0, y: 0, z: 0 } as sensor.AccelerometerResponse;
   private setPreviewSize: () => void = () => { this.previewVM.setPreviewSize(); }
+
+  @State isShowBlack: boolean = false;
+  @StorageLink('captureClick') @Watch('onCaptureClick') captureClickFlag: number = 0;
+  @State flashBlackOpacity: number = 1;
 
   async aboutToAppear() {
     sensor.on(sensor.SensorId.GRAVITY, (data) => {
@@ -193,6 +198,25 @@ struct Index {
     this.photoManager.setPhotoOutputCallback(this.isSinglePhoto);
   }
 
+  flashBlackAnim() {
+    this.flashBlackOpacity = 1;
+    this.isShowBlack = true;
+    animateToImmediately({
+      curve: curves.interpolatingSpring(1, 1, 410, 38),
+      delay: 50,
+      onFinish: () => {
+        this.isShowBlack = false;
+        this.flashBlackOpacity = 1;
+      }
+    }, () => {
+      this.flashBlackOpacity = 0;
+    })
+  }
+
+  onCaptureClick(): void {
+    this.flashBlackAnim();
+  }
+
   @Builder
   preview() {
     Stack({
@@ -266,6 +290,15 @@ struct Index {
           .fontSize(44)
           .fontWeight(FontWeight.Regular)
           .fontColor(Color.White)
+      }
+
+      if (this.isShowBlack) {
+        Column()
+          .key('black')
+          .width('100%')
+          .height('100%')
+          .backgroundColor(Color.Black)
+          .opacity(this.flashBlackOpacity)
       }
     }
     .alignRules({

@@ -83,6 +83,15 @@
             "EntryAbility"
           ]
         }
+      },
+      {
+        "name": "ohos.permission.APPROXIMATELY_LOCATION",
+        "reason": "$string:permission_LOCATION",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
       }
     ]
   }
