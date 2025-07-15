@@ -24,7 +24,8 @@ export function limitNumberInRange(src: number, range: number[]) {
   return src;
 }
 
-// 1.5   [0, 1, 5, 10] return 1
+// find start index the target in which range
+// eg： target: 1.5   arr: [0, 1, 5, 10]  return 1
 export function findRangeIndex(target: number, arr: number[]) {
   if (arr.length === 0) {
     return -1;
@@ -37,7 +38,8 @@ export function findRangeIndex(target: number, arr: number[]) {
   });
 }
 
-// toFixed(9.97, 1) -> 9.9
+// Math floor float by digit
+// eg: toFixed(9.97, 1) -> 9.9
 export function toFixed(num: number, digit: number): string {
   const scale = 10 ** digit;
   return (Math.floor(num * scale) / scale).toFixed(digit);
