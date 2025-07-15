@@ -312,13 +312,18 @@ export class PhotoManager implements OutputManager {
   public async capture(isFront: boolean) {
     const degree = await this.getPhotoDegree();
     const rotation = this.getPhotoRotation(this.output!, degree);
-    const location = await geoLocationManager.getCurrentLocation()
     let settings: camera.PhotoCaptureSetting = {
       quality: camera.QualityLevel.QUALITY_LEVEL_HIGH,
       rotation,
-      mirror: isFront,
-      location
+      mirror: isFront
     };
+    try {
+      const location = await geoLocationManager.getCurrentLocation();
+      settings.location = location;
+    } catch (error) {
+      let err = error as BusinessError;
+      hilog.error(0x0000, 'photoManager', `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
+    }
     this.output?.capture(settings, (err: BusinessError) => {
       if (err) {
         hilog.error(0x0000, 'photoManager', `Failed to capture the photo. error: ${JSON.stringify(err)}`);
@@ -327,7 +332,6 @@ export class PhotoManager implements OutputManager {
       hilog.info(0x0000, 'photoManager', 'Callback invoked to indicate the photo capture request success.');
     });
   }
-
   // [End capture_photo]
 
   private calculateDeviceDegree(x: number, y: number, z: number): number {

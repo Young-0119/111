@@ -208,17 +208,17 @@ export class VideoManager implements OutputManager {
       if (this.cameraPosition === 1) {
         return profile.size.width >= 1080 && profile.size.height >= 1080 &&
           Math.abs(profileRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
-          profile.frameRateRange.max === 30;
+          profile.frameRateRange.max === 30 && profile.format === camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP;
       }
       if (this.qualityLevel === QualityLevel.NORMAL) {
         return profile.size.width <= 1920 && profile.size.width >= 1080 && profile.size.height >= 1080 &&
           Math.abs(profileRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE * profile.size.width &&
-          profile.frameRateRange.max === 60;
+          profile.frameRateRange.max === 60 && profile.format === camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP;
       }
       if (this.qualityLevel === QualityLevel.HIGHER && this.cameraPosition === 0) {
         return profile.size.width <= 4096 && profile.size.width >= 3000 &&
           Math.abs(profileRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE * profile.size.width &&
-          profile.frameRateRange.max === 60;
+          profile.frameRateRange.max === 60 && profile.format === camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP;
       }
       return false;
     })
