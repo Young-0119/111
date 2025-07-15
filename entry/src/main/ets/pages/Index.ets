@@ -295,7 +295,7 @@ struct Index {
       if (this.isShowBlack) {
         Column()
           .key('black')
-          .width('100%') // 与预览流XComponent宽高保持一致，图层在预览流之上，截图组件之下。
+          .width('100%')
           .height('100%')
           .backgroundColor(Color.Black)
           .opacity(this.flashBlackOpacity)
