@@ -37,6 +37,7 @@ struct OperateButtonsView {
     this.thumbnail = pixelMap
     this.thumbnailUrl = url
   }
+  @StorageLink('captureClick') captureClickFlag: number = 0;
 
   aboutToAppear(): void {
     this.photoManager.setCallback(this.setThumbnail);
@@ -71,12 +72,14 @@ struct OperateButtonsView {
           this.photoRemainder--;
           if(this.photoRemainder === 0){
             this.photoManager.capture(this.previewVM.isFront);
+            this.captureClickFlag++;
             this.isDelayTakePhoto = false;
             clearTimeout(this.photoDelayTimer);
           }
         },1000)
       } else {
         this.photoManager.capture(this.previewVM.isFront);
+        this.captureClickFlag++;
       }
     })
   }

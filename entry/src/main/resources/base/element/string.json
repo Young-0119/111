@@ -131,6 +131,10 @@
     {
       "name": "preview_image_close",
       "value": "双路预览已关闭"
+    },
+    {
+      "name": "permission_LOCATION",
+      "value": "用于地理位置"
     }
   ]
 }
