@@ -54,15 +54,15 @@ struct ModeButtonsView {
               if (this.previewVM.isCurrentCameraMode(modeBtn.mode)) {
                 return;
               }
+              this.previewVM.openPreviewBlur();
               this.previewVM.cameraMode = modeBtn.mode;
               this.previewVM.setPreviewSize();
               const sceneMode = this.previewVM.getSceneMode();
               const cameraPosition = this.previewVM.getCameraPosition();
-              const profile = this.previewVM.getProfile();
               await this.cameraManager.release();
               this.photoManager.setIsActive(this.previewVM.isPhotoMode() ? true : false);
               this.videoManager.setIsActive(this.previewVM.isPhotoMode() ? false : true);
-              await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, profile);
+              await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
               this.syncButtonSettings();
             }
           })

@@ -51,7 +51,7 @@ struct Index {
   @State isSinglePhoto: boolean = false;
   @State isLivePhoto: boolean = false;
   private photoManager: PhotoManager = new PhotoManager(this.context, true, this.isSinglePhoto);
-  private previewManager: PreviewManager = new PreviewManager();
+  private previewManager: PreviewManager = new PreviewManager(() => { this.onPreviewStart() });
   private imageReceiverManager: ImageReceiverManager = new ImageReceiverManager(px => {
     this.onImageReceiver(px);
   });
@@ -80,8 +80,6 @@ struct Index {
   @State isZoomPinching: boolean = false;
   private originZoomBeforePinch: number = 1; // record zoom after pinch, sale base it.
 
-  @State blurRadius: number = 0;
-
   @State previewImage: PixelMap | ResourceStr = '';
   private PreviewImageHeight: number = 80;
 
@@ -93,18 +91,24 @@ struct Index {
   private setPreviewSize: () => void = () => { this.previewVM.setPreviewSize(); }
 
   async aboutToAppear() {
-    sensor.on(sensor.SensorId.GRAVITY, (data) => {
-      this.acc = data;
-    }, { interval: 100 * 1000 * 1000 }); // 100ms
+    this.addGravityEventListener();
     this.initSleepTimer();
     this.registerApplicationStateChange();
     this.addOrientationChangeEventListener();
-    display.on('foldStatusChange', () => { this.onFoldStatusChange() })
+    display.on('foldStatusChange', () => { this.onFoldStatusChange() });
   }
 
   aboutToDisappear(): void {
     this.removeOrientationChangeEventListener();
   }
+
+  // [Start addGravityEventListener]
+  addGravityEventListener() {
+    sensor.on(sensor.SensorId.GRAVITY, (data) => {
+      this.acc = data;
+    }, { interval: 100 * 1000 * 1000 }); // 100ms
+  }
+  // [End addGravityEventListener]
 
   addOrientationChangeEventListener() {
     this.windowClass.on('windowSizeChange', this.setPreviewSize);
@@ -118,8 +122,10 @@ struct Index {
     this.previewImage = pixelMap;
   }
 
+  // [Start initSleepTimer]
   initSleepTimer() {
     this.sleepTimer = new RefreshableTimer(() => {
+      this.previewVM.openPreviewBlur();
       this.isSleeping = true;
       this.cameraManager.release();
     }, 30 * 1000);
@@ -127,16 +133,9 @@ struct Index {
     const observer = this.getUIContext().getUIObserver();
     observer.on('willClick', () => {
       this.sleepTimer?.refresh();
-    })
+    });
   }
-
-  openPreviewBlur() {
-    this.blurRadius = 150;
-  }
-
-  closePreviewBlur() {
-    this.blurRadius = 0;
-  }
+  // [End initSleepTimer]
 
   async onFoldStatusChange() {
     await this.cameraManager.release();
@@ -144,16 +143,37 @@ struct Index {
     this.syncButtonSettings();
   }
 
+  // [Start registerApplicationStateChange]
   registerApplicationStateChange() {
     this.applicationContext.on('applicationStateChange', {
       onApplicationForeground: async () => {
         await this.startCamera();
+        // [StartExclude registerApplicationStateChange]
         this.syncButtonSettings();
+        // [EndExclude registerApplicationStateChange]
       },
       onApplicationBackground: () => {
+        // [StartExclude registerApplicationStateChange]
+        this.previewVM.openPreviewBlur();
+        // [EndExclude registerApplicationStateChange]
         this.cameraManager.release();
       }
     })
+  }
+
+  async startCamera() {
+    const cameraPosition = this.previewVM.getCameraPosition();
+    const sceneMode = this.previewVM.getSceneMode();
+    await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
+  }
+  // [End registerApplicationStateChange]
+
+  exitApp() {
+    this.applicationContext.killAllProcesses();
+  }
+
+  onPreviewStart() {
+    this.previewVM.closePreviewBlur();
   }
 
   initZooms() {
@@ -176,17 +196,6 @@ struct Index {
     };
   }
 
-  async startCamera() {
-    const cameraPosition = this.previewVM.getCameraPosition();
-    const sceneMode = this.previewVM.getSceneMode();
-    const profile = this.previewVM.getProfile();
-    await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, profile);
-  }
-
-  exitApp() {
-    this.applicationContext.killAllProcesses();
-  }
-
   syncButtonSettings() {
     this.previewManager.setFrameRate(this.previewVM.currentRate, this.previewVM.currentRate);
     this.photoManager.enableMovingPhoto(this.isLivePhoto);
@@ -195,23 +204,34 @@ struct Index {
 
   @Builder
   preview() {
+    // [Start Stack]
     Stack({
       alignContent: Alignment.Center
     }) {
+      // [Start XComponent]
+      // [Start XComponent_gesture]
       XComponent({
         type: XComponentType.SURFACE,
         controller: this.previewVM.xComponentController
       })
+        // [StartExclude Stack]
+        // [StartExclude XComponent_gesture]
         .onLoad(async () => {
+          // [StartExclude XComponent]
           await PermissionManager.request(CameraConstant.PERMISSIONS, this.context)
             .catch(() => { this.exitApp() });
+          // [EndExclude XComponent]
           this.previewVM.surfaceId = this.previewVM.xComponentController.getXComponentSurfaceId();
           this.previewVM.setPreviewSize();
-          this.previewVM.xComponentController.setXComponentSurfaceRotation({ lock: true })
+          this.previewVM.xComponentController.setXComponentSurfaceRotation({ lock: true });
+          // [StartExclude XComponent]
           await this.startCamera();
           this.initZooms();
           this.initRates();
+          // [EndExclude XComponent]
         })
+        // [StartExclude XComponent_gesture]
+        // [End XComponent]
         .gesture(
           PinchGesture({ fingers: 2 })
             .onActionStart(() => {
@@ -227,6 +247,7 @@ struct Index {
               this.isZoomPinching = false;
             })
         )
+        // [End XComponent_gesture]
         .onClick(event => {
           this.isFocusBoxVisible = true;
           const previewSize = this.previewVM.previewSize;
@@ -243,11 +264,11 @@ struct Index {
           }, event)
           this.focusBoxTimer.refresh();
         })
-      // gird line
+      // [EndExclude Stack]
       if (this.isGridLineVisible) {
         GridLine()
       }
-      // level indicator
+      // [StartExclude Stack]
       if (this.isLevelIndicatorVisible) {
         LevelIndicator({
           acc: this.acc
@@ -267,16 +288,20 @@ struct Index {
           .fontWeight(FontWeight.Regular)
           .fontColor(Color.White)
       }
+      // [EndExclude Stack]
     }
+    // [End Stack]
     .alignRules({
       middle: { anchor: '__container__', align: HorizontalAlign.Center }
     })
     .width(this.previewVM.getPreviewWidth())
     .height(this.previewVM.getPreviewHeight())
     .margin({ top: this.previewVM.getPreviewTop() })
-    .blur(this.blurRadius)
+    .blur(this.previewVM.blurRadius)
+    .rotate(this.previewVM.blurRotation)
   }
 
+  // [Start wakeupMask]
   @Builder
   wakeupMask() {
     Column() {
@@ -284,10 +309,12 @@ struct Index {
         .fontColor(Color.White)
         .opacity(0.6)
     }
+    // [StartExclude wakeupMask]
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Black)
     .justifyContent(FlexAlign.Center)
+    // [EndExclude wakeupMask]
     .onClick(async () => {
       this.isSleeping = false;
       this.sleepTimer?.refresh();
@@ -295,6 +322,7 @@ struct Index {
       this.syncButtonSettings();
     })
   }
+  // [End wakeupMask]
 
   @Builder
   gridLineButton() {
