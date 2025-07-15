@@ -33,13 +33,13 @@ enum QualityLevel {
 }
 
 export enum AVRecorderState {
-  IDLE = "idle",
-  PREPARED = "prepared",
-  STARTED = "started",
-  PAUSED = "paused",
-  STOPPED = "stopped",
-  RELEASED = "released",
-  ERROR = "error"
+  IDLE = 'idle',
+  PREPARED = 'prepared',
+  STARTED = 'started',
+  PAUSED = 'paused',
+  STOPPED = 'stopped',
+  RELEASED = 'released',
+  ERROR = 'error'
 }
 
 export class VideoManager implements OutputManager {
@@ -87,7 +87,6 @@ export class VideoManager implements OutputManager {
     return this.output;
   }
 
-  // 配置录制参数。
   async prepare() {
     try {
       if (this.avRecorder?.state === AVRecorderState.IDLE && this.avConfig) {
@@ -102,7 +101,7 @@ export class VideoManager implements OutputManager {
   async start() {
     try {
       if (this.avRecorder?.state === AVRecorderState.PREPARED) {
-        await this.avRecorder.updateRotation(this.getVideoRotation(await this.getGravity())); // 配置录像旋转角度。
+        await this.avRecorder.updateRotation(this.getVideoRotation(await this.getGravity()));
         await this.output?.start();
         await this.avRecorder?.start();
       }
@@ -127,7 +126,6 @@ export class VideoManager implements OutputManager {
     }
   }
 
-  // 暂停录制。
   async pause() {
     try {
       if (this.avRecorder?.state === AVRecorderState.STARTED) {

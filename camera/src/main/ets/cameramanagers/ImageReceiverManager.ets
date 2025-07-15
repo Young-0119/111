@@ -68,19 +68,6 @@ export class ImageReceiverManager implements OutputManager {
   }
   // [End init]
 
-  getRotate(): number {
-    const displayRotation = display.getDefaultDisplaySync().rotation;
-    if (this.position === camera.CameraPosition.CAMERA_POSITION_BACK) {
-      return (displayRotation * camera.ImageRotation.ROTATION_90 + 90) % 360;
-    }
-    const rotation = displayRotation * camera.ImageRotation.ROTATION_90;
-    const angle = (displayRotation * camera.ImageRotation.ROTATION_90 + 270) % 360;
-    if (rotation === 90 || rotation === 270) {
-      return (angle + 180) % 360;
-    }
-    return angle;
-  }
-
   // [Start getPixelMap]
   async getPixelMap(imgComponent: image.Component, width: number, height: number, stride: number) {
     if (stride === width) {
