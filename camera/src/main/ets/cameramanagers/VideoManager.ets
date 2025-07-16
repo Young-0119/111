@@ -23,10 +23,10 @@ import { image } from '@kit.ImageKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { colorSpaceManager } from '@kit.ArkGraphics2D';
+import { Logger } from 'commons/src/main/ets/utils/Logger';
 
-const LOG_TAG = 'video';
+const TAG_LOG = 'video';
 
 enum QualityLevel {
   NORMAL,
@@ -72,10 +72,10 @@ export class VideoManager implements OutputManager {
       this.avRecorder = await media.createAVRecorder();
       this.avRecorder.on('stateChange', state => {
         this.state = state;
-        hilog.info(0x0000, 'videoManager', 'on avRecorder state change: ', state)
+        Logger.info(TAG_LOG, 'on avRecorder state change: ', state)
       });
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', 'createAVRecorder call failed. error code: %{public}s', (error as BusinessError).code);
+     Logger.info(TAG_LOG, 'createAVRecorder call failed. error code: %{public}s', (error as BusinessError).code);
     }
     if (this.avRecorder === undefined || this.avRecorder === null) {
       return;
@@ -92,10 +92,10 @@ export class VideoManager implements OutputManager {
     try {
       if (this.avRecorder?.state === AVRecorderState.IDLE && this.avConfig) {
         await this.avRecorder.prepare(this.avConfig);
-        hilog.info(0x0000, 'videoManager', 'Succeeded in preparing');
+        Logger.info(TAG_LOG, 'Succeeded in preparing');
       }
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to prepare and catch error is  ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to prepare and catch error is  ${error.message}`);
     }
   }
 
@@ -110,7 +110,7 @@ export class VideoManager implements OutputManager {
         await this.avRecorder?.start();
       }
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to start and catch error is  ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to start and catch error is  ${error.message}`);
     }
   }
   // [End start_video]
@@ -128,7 +128,7 @@ export class VideoManager implements OutputManager {
         }
       }
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to stop and catch error is  ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to stop and catch error is  ${error.message}`);
     }
   }
   // [End stop_video]
@@ -141,7 +141,7 @@ export class VideoManager implements OutputManager {
         await this.output?.stop();
       }
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to pause and catch error is  ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to pause and catch error is  ${error.message}`);
     }
   }
   // [End pause_video]
@@ -154,7 +154,7 @@ export class VideoManager implements OutputManager {
         await this.avRecorder.resume();
       }
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to resume and catch error is  ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to resume and catch error is  ${error.message}`);
     }
   }
   // [End resume_video]
@@ -190,7 +190,7 @@ export class VideoManager implements OutputManager {
       // [End get_surface_id]
       this.output = cameraManager.createVideoOutput(this.videoProfile, videoSurfaceId);
     } catch (error) {
-      hilog.error(0x0000, 'videoManager',
+      Logger.error(TAG_LOG,
         `Failed to create the output instance. error code: ${(error as BusinessError).code}`);
     }
   }
@@ -223,7 +223,7 @@ export class VideoManager implements OutputManager {
       return false;
     })
     if (!videoProfile) {
-     hilog.info(0x0000, 'videoManager', 'Failed to get videoProfile')
+     Logger.info(TAG_LOG, 'Failed to get videoProfile')
     }
     this.videoProfile = videoProfile;
   }
@@ -311,7 +311,7 @@ export class VideoManager implements OutputManager {
         return promise;
       }
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to getGravity and catch error is  ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to getGravity and catch error is  ${error.message}`);
       return 0
     }
   }
@@ -324,10 +324,10 @@ export class VideoManager implements OutputManager {
     try {
       if (this.output) {
         videoRotation = this.output.getVideoRotation(deviceDegree);
-        hilog.info(0x0000, 'videoManager', `Video rotation is: ${videoRotation}`);
+        Logger.info(TAG_LOG, `Video rotation is: ${videoRotation}`);
       }
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to getVideoRotation and catch error is: ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to getVideoRotation and catch error is: ${error.message}`);
     }
     return videoRotation;
   }
@@ -350,7 +350,7 @@ export class VideoManager implements OutputManager {
       pixelMap = await avImageGenerator.fetchFrameByTime(timeUs, queryOption, param);
       avImageGenerator.release();
     } catch (error) {
-     hilog.info(0x0000, 'videoManager', `Failed to getVideoThumbnail and catch error is  ${error.message}`);
+     Logger.info(TAG_LOG, `Failed to getVideoThumbnail and catch error is  ${error.message}`);
     }
     return pixelMap;
   }
@@ -366,13 +366,13 @@ export class VideoManager implements OutputManager {
     // Check whether video stabilization is supported
     let isSupported: boolean = session.isVideoStabilizationModeSupported(mode);
     if (isSupported) {
-      hilog.info(0x0000, 'videoManager', `setVideoStabilizationMode: ${mode}`);
+      Logger.info(TAG_LOG, `setVideoStabilizationMode: ${mode}`);
       // Set video stabilization
       session.setVideoStabilizationMode(mode);
       let activeVideoStabilizationMode = session.getActiveVideoStabilizationMode();
-      hilog.info(0x0000, 'videoManager', `activeVideoStabilizationMode: ${activeVideoStabilizationMode}`);
+      Logger.info(TAG_LOG, `activeVideoStabilizationMode: ${activeVideoStabilizationMode}`);
     } else {
-      hilog.info(0x0000, 'videoManager', `videoStabilizationMode: ${mode} is not support`);
+      Logger.info(TAG_LOG, `videoStabilizationMode: ${mode} is not support`);
     }
     return isSupported;
   }
@@ -385,7 +385,7 @@ export class VideoManager implements OutputManager {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'videoManager', `The getSupportedColorSpaces call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.code}`);
     }
     return colorSpaces;
   }
@@ -395,12 +395,12 @@ export class VideoManager implements OutputManager {
     let colorSpaces: Array<colorSpaceManager.ColorSpace> = this.getSupportedColorSpaces(session);
     let isSupportedColorSpaces = colorSpaces.indexOf(colorSpace) >= 0;
     if (isSupportedColorSpaces) {
-      hilog.info(0x0000, 'videoManager', `setColorSpace: ${colorSpace}`);
+      Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
       session.setColorSpace(colorSpace);
       let activeColorSpace:colorSpaceManager.ColorSpace = session.getActiveColorSpace();
-      hilog.info(0x0000, 'videoManager', `activeColorSpace: ${activeColorSpace}`);
+      Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
     } else {
-      hilog.info(0x0000, 'videoManager', `colorSpace: ${colorSpace} is not support`);
+      Logger.info(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
     }
   }
   // [Start set_video_color_space]

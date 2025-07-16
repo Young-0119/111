@@ -20,17 +20,18 @@ import { sensor } from '@kit.SensorServiceKit';
 import { Decimal } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { geoLocationManager } from '@kit.LocationKit';
 import { colorSpaceManager } from '@kit.ArkGraphics2D';
+import { Logger } from 'commons/src/main/ets/utils/Logger';
 
-const LOG_TAG = 'PhotoManager';
+const TAG_LOG = 'PhotoManager';
 
 export class PhotoManager implements OutputManager {
   output?: camera.PhotoOutput;
   isActive: boolean = true;
   context: Context;
   isSingle: boolean = false;
+  location: geoLocationManager.Location | null = null;
   private callback: (pixelMap: image.PixelMap, url: string) => void = () => {
   };
 
@@ -78,13 +79,13 @@ export class PhotoManager implements OutputManager {
               pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
           });
         if (!PhotoProfile) {
-          hilog.error(0x0000, 'PhotoManager', 'Failed to get photo profile');
+          Logger.error(TAG_LOG, 'Failed to get photo profile');
           return;
         }
         cameraPhotoOutput = cameraManager.createPhotoOutput(PhotoProfile);
       } catch (error) {
         let err = error as BusinessError;
-        hilog.error(0x0000, 'PhotoManager', `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
       }
     }
     this.output = cameraPhotoOutput;
@@ -103,7 +104,7 @@ export class PhotoManager implements OutputManager {
       await phAccessHelper.applyChanges(assetChangeRequest);
       phAccessHelper.release();
     } catch (err) {
-      hilog.error(0x0000, 'photoManager', `apply saveCameraPhoto failed with error: ${err.code}, ${err.message}`);
+      Logger.error(TAG_LOG, `apply saveCameraPhoto failed with error: ${err.code}, ${err.message}`);
     }
   }
 
@@ -112,13 +113,13 @@ export class PhotoManager implements OutputManager {
     class MediaDataHandler implements photoAccessHelper.MediaAssetDataHandler<ArrayBuffer> {
       onDataPrepared(data: ArrayBuffer) {
         if (data === undefined) {
-          hilog.error(0x0000, 'photoManager', 'Error occurred when preparing data');
+          Logger.error(TAG_LOG, 'Error occurred when preparing data');
           return;
         }
         let imageSource = image.createImageSource(data);
         imageSource.createPixelMap((err: BusinessError, data: image.PixelMap) => {
           if (err) {
-            hilog.error(0x0000, 'photoManager', `createPixelMap err:${err.code}`);
+            Logger.error(TAG_LOG, `createPixelMap err:${err.code}`);
             return;
           }
           callback(data, photoAsset.uri);
@@ -149,7 +150,7 @@ export class PhotoManager implements OutputManager {
   setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
     photoOutput.on('photoAvailable', (errCode: BusinessError, photo: camera.Photo): void => {
       if (errCode || photo === undefined) {
-        hilog.error(0x0000, 'photoManager', 'getPhoto failed');
+        Logger.error(TAG_LOG, 'getPhoto failed');
         return;
       }
       this.mediaLibSavePhotoSingle(context, photo.main)
@@ -162,14 +163,14 @@ export class PhotoManager implements OutputManager {
   mediaLibSavePhotoSingle(context: Context, imageObj: image.Image) {
     imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, component: image.Component) => {
       if (errCode || component === undefined) {
-        hilog.error(0x0000, 'photoManager', 'getComponent failed');
+        Logger.error(TAG_LOG, 'getComponent failed');
         return;
       }
       let buffer: ArrayBuffer;
       if (component.byteBuffer) {
         buffer = component.byteBuffer;
       } else {
-        hilog.error(0x0000, 'photoManager', 'byteBuffer is null');
+        Logger.error(TAG_LOG, 'byteBuffer is null');
         return;
       }
       let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
@@ -224,14 +225,14 @@ export class PhotoManager implements OutputManager {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager', `The getSupportedColorSpaces call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.code}`);
     }
     let isSupportedColorSpaces = colorSpaces.indexOf(colorSpace) >= 0;
     if (isSupportedColorSpaces) {
       session.setColorSpace(colorSpace);
       let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
     } else {
-      hilog.error(0x0000, 'photoManager', `colorSpace: ${colorSpace} is not support`);
+      Logger.error(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
     }
   }
   // [End set_color_space]
@@ -251,7 +252,7 @@ export class PhotoManager implements OutputManager {
       }
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager', `Failed to hasFlash. error: ${JSON.stringify(err)}`);
+      Logger.error(TAG_LOG, `Failed to hasFlash. error: ${JSON.stringify(err)}`);
     }
   }
 
@@ -264,7 +265,7 @@ export class PhotoManager implements OutputManager {
       }
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager',
+      Logger.error(TAG_LOG,
         `Failed to check whether the focus mode is supported. error: ${JSON.stringify(err)}`);
     }
   }
@@ -274,7 +275,7 @@ export class PhotoManager implements OutputManager {
       photoSession.setFocusPoint(focusPoint);
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager', `The setFocusPoint call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The setFocusPoint call failed. error code: ${err.code}`);
     }
   }
 
@@ -288,7 +289,7 @@ export class PhotoManager implements OutputManager {
         }
       } catch (error) {
         let err = error as BusinessError;
-        hilog.error(0x0000, 'photoManager', `Failed to get the zoom ratio range. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to get the zoom ratio range. error: ${JSON.stringify(err)}`);
       }
     }
     photoSession.setZoomRatio(zoomRatio || photoZoomRatio);
@@ -301,7 +302,7 @@ export class PhotoManager implements OutputManager {
       photoRotation = photoOutput.getPhotoRotation(deviceDegree);
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager', `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
     }
     return photoRotation;
   }
@@ -317,19 +318,12 @@ export class PhotoManager implements OutputManager {
       rotation,
       mirror: isFront
     };
-    try {
-      const location = await geoLocationManager.getCurrentLocation();
-      settings.location = location;
-    } catch (error) {
-      let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager', `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
-    }
     this.output?.capture(settings, (err: BusinessError) => {
       if (err) {
-        hilog.error(0x0000, 'photoManager', `Failed to capture the photo. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to capture the photo. error: ${JSON.stringify(err)}`);
         return;
       }
-      hilog.info(0x0000, 'photoManager', 'Callback invoked to indicate the photo capture request success.');
+      Logger.info(TAG_LOG, 'Callback invoked to indicate the photo capture request success.');
     });
   }
   // [End capture_photo]
@@ -364,10 +358,11 @@ export class PhotoManager implements OutputManager {
       isSupported = photoOutput.isMovingPhotoSupported();
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager', `The isMovingPhotoSupported call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The isMovingPhotoSupported call failed. error code: ${err.code}`);
     }
     return isSupported;
   }
+
   // [End is_moving_photo]
 
   // [Start enable_moving_photo]
@@ -376,9 +371,10 @@ export class PhotoManager implements OutputManager {
       this.output?.enableMovingPhoto(enabled);
     } catch (error) {
       let err = error as BusinessError;
-      hilog.error(0x0000, 'photoManager', `The enableMovingPhoto call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The enableMovingPhoto call failed. error code: ${err.code}`);
     }
   }
+
   // [End enable_moving_photo]
 
   // [Start photo_release]
@@ -391,6 +387,5 @@ export class PhotoManager implements OutputManager {
     }
     this.output = undefined;
   }
-
   // [End photo_release]
 }
