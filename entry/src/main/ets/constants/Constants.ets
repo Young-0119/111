@@ -26,7 +26,6 @@ class CameraConstant {
     'ohos.permission.READ_IMAGEVIDEO',
     'ohos.permission.APPROXIMATELY_LOCATION'
   ];
-  static readonly PROFILE_DIFFERENCE = 1e-10;
 }
 
 export default CameraConstant;
