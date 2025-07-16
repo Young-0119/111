@@ -131,6 +131,10 @@
     {
       "name": "preview_image_close",
       "value": "Dual-channel preview has been disabled"
+    },
+    {
+      "name": "permission_LOCATION",
+      "value": "For location"
     }
   ]
 }
