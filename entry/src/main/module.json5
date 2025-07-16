@@ -33,12 +33,20 @@
         ]
       }
     ],
+    // [Start permissions]
+    // [Start permissions_acc]
     "requestPermissions": [
+      // [StartExclude permissions_acc]
       {
         "name": "ohos.permission.CAMERA",
         "reason": "$string:permission_CAMERA",
-        "usedScene": {}
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
       },
+      // [StartExclude permissions]
       {
         "name": "ohos.permission.MICROPHONE",
         "reason": "$string:reason_microphone",
@@ -75,6 +83,7 @@
           ]
         },
       },
+      // [EndExclude permissions_acc]
       {
         "name": "ohos.permission.ACCELEROMETER",
         "reason": "$string:permission_SENSOR",
@@ -93,6 +102,9 @@
           ]
         }
       }
+      // [EndExclude permissions]
     ]
+    // [End permissions]
+    // [End permissions_acc]
   }
 }

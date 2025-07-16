@@ -18,6 +18,7 @@ import { Logger } from 'commons/src/main/ets/utils/Logger';
 
 const TAG = 'PermissionManager';
 
+// [Start request_permissions]
 class PermissionManager {
   private static atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
 
@@ -34,5 +35,6 @@ class PermissionManager {
     }
   }
 }
+// [End request_permissions]
 
 export default PermissionManager;

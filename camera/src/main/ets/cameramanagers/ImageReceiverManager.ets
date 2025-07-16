@@ -59,26 +59,16 @@ export class ImageReceiverManager implements OutputManager {
     this.output = undefined;
   }
 
+  // [Start init]
   async init(size: Size, format = image.ImageFormat.JPEG, capacity = 8) {
     const receiver = image.createImageReceiver(size, format, capacity);
     const surfaceId = await receiver.getReceivingSurfaceId();
     this.onImageArrival(receiver);
     return surfaceId;
   }
+  // [End init]
 
-  getRotate(): number {
-    const displayRotation = display.getDefaultDisplaySync().rotation;
-    if (this.position === camera.CameraPosition.CAMERA_POSITION_BACK) {
-      return (displayRotation * camera.ImageRotation.ROTATION_90 + 90) % 360;
-    }
-    const rotation = displayRotation * camera.ImageRotation.ROTATION_90;
-    const angle = (displayRotation * camera.ImageRotation.ROTATION_90 + 270) % 360;
-    if (rotation === 90 || rotation === 270) {
-      return (angle + 180) % 360;
-    }
-    return angle;
-  }
-
+  // [Start getPixelMap]
   async getPixelMap(imgComponent: image.Component, width: number, height: number, stride: number) {
     if (stride === width) {
       return await image.createPixelMap(imgComponent.byteBuffer, {
@@ -86,7 +76,7 @@ export class ImageReceiverManager implements OutputManager {
         srcPixelFormat: image.PixelMapFormat.NV21,
       });
     }
-    const dstBufferSize = width * height * 1.5
+    const dstBufferSize = width * height * 1.5;
     const dstArr = new Uint8Array(dstBufferSize);
     for (let j = 0; j < height * 1.5; j++) {
       const srcBuf = new Uint8Array(imgComponent.byteBuffer, j * stride, width);
@@ -97,7 +87,9 @@ export class ImageReceiverManager implements OutputManager {
       srcPixelFormat: image.PixelMapFormat.NV21,
     });
   }
+  // [End getPixelMap]
 
+  // [Start onImageArrival]
   onImageArrival(receiver: image.ImageReceiver): void {
     receiver.on('imageArrival', () => {
       Logger.info(TAG, 'image arrival');
@@ -106,11 +98,15 @@ export class ImageReceiverManager implements OutputManager {
           Logger.error(TAG, 'readNextImage failed');
           return;
         }
+        // [Start release]
+        // [Start nextImage]
         nextImage.getComponent(image.ComponentType.JPEG, async (err: BusinessError, imgComponent: image.Component) => {
+          // [StartExclude release]
           if (err || imgComponent === undefined) {
             Logger.error(TAG, 'getComponent failed');
           }
           if (imgComponent.byteBuffer) {
+            // [StartExclude onImageArrival]
             const width = nextImage.size.width;
             const height = nextImage.size.height;
             const stride = imgComponent.rowStride;
@@ -129,13 +125,22 @@ export class ImageReceiverManager implements OutputManager {
               await pixelMap.rotate(rotation);
             }
             this.callback(pixelMap);
+            // [EndExclude onImageArrival]
           } else {
             Logger.error(TAG, 'byteBuffer is null');
           }
+          // [EndExclude release]
+          // [StartExclude nextImage]
+          // [StartExclude onImageArrival]
           nextImage.release();
           Logger.info(TAG, 'image process done');
-        })
-      })
-    })
+          // [EndExclude onImageArrival]
+          // [EndExclude nextImage]
+        });
+        // [End release]
+        // [End nextImage]
+      });
+    });
   }
+  // [End onImageArrival]
 }

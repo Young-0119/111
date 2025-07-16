@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+// [Start RefreshableTimer]
 class RefreshableTimer {
   private timerId?: number;
   private readonly timeout: number;
@@ -47,5 +48,6 @@ class RefreshableTimer {
     return this.isActive;
   }
 }
+// [End RefreshableTimer]
 
 export default RefreshableTimer;

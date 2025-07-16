@@ -3,7 +3,7 @@
     "name": "camera",
     "type": "har",
     "deviceTypes": [
-      "default",
+      "phone",
       "tablet"
     ]
   }

@@ -133,8 +133,7 @@ struct OperateButtonsView {
         await this.cameraManager.release();
         const cameraPosition = this.previewVM.getCameraPosition();
         const sceneMode = this.previewVM.getSceneMode();
-        const profile = this.previewVM.getProfile();
-        await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, profile);
+        await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
         this.syncButtonSettings();
       }
     })
@@ -210,21 +209,28 @@ struct OperateButtonsView {
       })
   }
 
+  // [Start toggleCameraPositionButton]
   @Builder
   toggleCameraPositionButton() {
     Image($r('app.media.toggle_position'))
       .width(48)
       .height(48)
       .onClick(async () => {
+        // [StartExclude toggleCameraPositionButton]
+        this.previewVM.openPreviewBlur();
+        this.previewVM.rotatePreviewBlur();
+        // [EndExclude toggleCameraPositionButton]
         this.previewVM.isFront = !this.previewVM.isFront;
         const cameraPosition = this.previewVM.getCameraPosition();
-        const profile: camera.Profile = this.previewVM.getProfile();
         const sceneMode = this.previewVM.getSceneMode();
         await this.cameraManager.release();
-        await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, profile);
+        await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
+        // [StartExclude toggleCameraPositionButton]
         this.syncButtonSettings();
+        // [EndExclude toggleCameraPositionButton]
       })
   }
+  // [End toggleCameraPositionButton]
 
   build() {
     Row() {

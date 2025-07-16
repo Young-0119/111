@@ -16,6 +16,9 @@
 import { curves, display } from '@kit.ArkUI';
 import { sensor } from '@kit.SensorServiceKit';
 
+const ANGLE_DIFFERENCE: number = 3;
+
+// [Start LevelIndicator]
 @Component
 export struct LevelIndicator {
   @Prop acc: sensor.AccelerometerResponse;
@@ -29,8 +32,8 @@ export struct LevelIndicator {
   }
 
   isAlign() {
-    return Math.abs(this.getRotate()) - 0 <= 3
-      || Math.abs(Math.abs(this.getRotate()) - 90) <= 3;
+    return Math.abs(this.getRotate()) - 0 <= ANGLE_DIFFERENCE
+      || Math.abs(Math.abs(this.getRotate()) - 90) <= ANGLE_DIFFERENCE;
   }
 
   build() {
@@ -39,8 +42,10 @@ export struct LevelIndicator {
         width: 200,
         height: 1
       })
+        // [StartExclude LevelIndicator]
         .stroke(Color.White)
         .endPoint([200, 0])
+        // [EndExclude LevelIndicator]
         .strokeDashArray([3, this.isAlign() ? 0 : 3])
         .opacity(this.isAlign() ? 1 : 0.5)
         .rotate({ angle: this.getRotate(), centerX: '50%', centerY: '50%' })
@@ -50,14 +55,19 @@ export struct LevelIndicator {
           playMode: PlayMode.Normal
         })
       Circle()
+        // [StartExclude LevelIndicator]
         .width(48)
         .height(48)
         .stroke(Color.White)
         .fill(Color.Transparent)
+        // [EndExclude LevelIndicator]
         .opacity(this.isAlign() ? 1 : 0.5)
     }
+    // [StartExclude LevelIndicator]
     .width('100%')
     .height('100%')
+    // [EndExclude LevelIndicator]
     .hitTestBehavior(HitTestMode.Transparent)
   }
 }
+// [End LevelIndicator]

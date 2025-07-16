@@ -34,13 +34,13 @@ enum QualityLevel {
 }
 
 export enum AVRecorderState {
-  IDLE = "idle",
-  PREPARED = "prepared",
-  STARTED = "started",
-  PAUSED = "paused",
-  STOPPED = "stopped",
-  RELEASED = "released",
-  ERROR = "error"
+  IDLE = 'idle',
+  PREPARED = 'prepared',
+  STARTED = 'started',
+  PAUSED = 'paused',
+  STOPPED = 'stopped',
+  RELEASED = 'released',
+  ERROR = 'error'
 }
 
 export class VideoManager implements OutputManager {

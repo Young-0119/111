@@ -22,13 +22,14 @@ export struct GridLine {
   @Prop strokeStyle: 	string |number |CanvasGradient | CanvasPattern = Color.White;
   @Prop lineWidth: number = 1;
 
+  // [Start draw]
   draw() {
     const ctx = this.context;
     ctx.strokeStyle = this.strokeStyle;
     ctx.lineWidth = this.lineWidth;
     const height = this.context.height;
     const width = this.context.width;
-    // hor
+    // horizontal
     for (let i = 1; i < this.cols; i++) {
       const x = (width / this.cols) * i;
       ctx.beginPath();
@@ -53,4 +54,5 @@ export struct GridLine {
       .hitTestBehavior(HitTestMode.Transparent)
       .onReady(() => this.draw())
   }
+  // [End draw]
 }
