@@ -83,19 +83,19 @@
           ]
         },
       },
-      // [EndExclude permissions_acc]
       {
-        "name": "ohos.permission.ACCELEROMETER",
-        "reason": "$string:permission_SENSOR",
+        "name": "ohos.permission.APPROXIMATELY_LOCATION",
+        "reason": "$string:permission_LOCATION",
         "usedScene": {
           "abilities": [
             "EntryAbility"
           ]
         }
       },
+      // [EndExclude permissions_acc]
       {
-        "name": "ohos.permission.APPROXIMATELY_LOCATION",
-        "reason": "$string:permission_LOCATION",
+        "name": "ohos.permission.ACCELEROMETER",
+        "reason": "$string:permission_SENSOR",
         "usedScene": {
           "abilities": [
             "EntryAbility"
