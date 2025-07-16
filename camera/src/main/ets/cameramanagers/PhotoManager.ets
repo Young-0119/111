@@ -330,12 +330,17 @@ export class PhotoManager implements OutputManager {
 
   private calculateDeviceDegree(x: number, y: number, z: number): number {
     let deviceDegree: number = 0;
+    // Determine if the device is approaching a vertical position (perpendicular to the ground)
     if ((x * x + y * y) * 3 < z * z) {
       return deviceDegree;
     } else {
-      let sd: Decimal = Decimal.atan2(y, -x);
+      // Calculate the inverse tangent value
+      let sd: Decimal = Decimal.atan2(y, -x)
+      // Convert radian values to angle values;
       let sc: Decimal = Decimal.round(Number(sd) / Math.PI * 180);
+      // Adjust angle to be relative to vertical orientation
       deviceDegree = 90 - Number(sc);
+      // Normalize angle to 0-360 degrees range
       deviceDegree = deviceDegree >= 0 ? deviceDegree % 360 : deviceDegree % 360 + 360;
     }
     return deviceDegree;

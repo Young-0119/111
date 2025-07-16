@@ -274,12 +274,17 @@ export class VideoManager implements OutputManager {
     let x = data.x;
     let y = data.y;
     let z = data.z;
+    // Determine if the device is approaching a vertical position (perpendicular to the ground)
     if ((x * x + y * y) * 3 < z * z) {
       return getDeviceDegree;
     } else {
+      // Calculate the inverse tangent value
       let sd: Decimal = Decimal.atan2(y, -x);
+      // Convert radian values to angle values;
       let sc: Decimal = Decimal.round(Number(sd) / 3.141592653589 * 180)
+      // Adjust angle to be relative to vertical orientation
       getDeviceDegree = 90 - Number(sc);
+      // Normalize angle to 0-360 degrees range
       getDeviceDegree = getDeviceDegree >= 0 ? getDeviceDegree % 360 : getDeviceDegree % 360 + 360;
     }
     return getDeviceDegree;
