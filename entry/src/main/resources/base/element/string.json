@@ -14,123 +14,123 @@
     },
     {
       "name": "permission_CAMERA",
-      "value": "用于相机操作"
+      "value": "For camera operations"
     },
     {
       "name": "reason_microphone",
-      "value": "用于相机录像场景"
+      "value": "For camera video recording"
     },
     {
       "name": "reason_media_location",
-      "value": "用于相机获取媒体信息场景"
+      "value": "For scenarios where the camera retrieves media information"
     },
     {
       "name": "reason_write_imagevideo",
-      "value": "用于相机读写媒体文件"
+      "value": "For reading and writing media files with the camera"
     },
     {
       "name": "reason_read_imagevideo",
-      "value": "用于相机读写媒体文件"
+      "value": "For camera media file read/write"
     },
     {
       "name": "permission_SENSOR",
-      "value": "用于传感器"
+      "value": "For sensors"
     },
     {
       "name": "recording",
-      "value": "录制中"
+      "value": "Recording in progress"
     },
     {
       "name": "paused",
-      "value": "已暂停"
+      "value": "Paused"
     },
     {
       "name": "wakeup_text",
-      "value": "点击屏幕唤醒相机"
+      "value": "Tap the screen to wake up the camera"
     },
     {
       "name": "photo",
-      "value": "拍照"
+      "value": "Photo"
     },
     {
       "name": "video",
-      "value": "录像"
+      "value": "Video"
     },
     {
       "name": "preview_rate",
-      "value": "预览帧率%d"
+      "value": "Preview frame rate%d"
     },
     {
       "name": "delay",
-      "value": "延时拍照%d"
+      "value": "Time-lapse%d"
     },
     {
       "name": "delay_close",
-      "value": "延时拍照关闭"
+      "value": "Off time-lapse"
     },
     {
       "name": "moving_open",
-      "value": "动态拍照已开启"
+      "value": "Live photo mode is on"
     },
     {
       "name": "moving_close",
-      "value": "动态拍照已关闭"
+      "value": "Live photo mode is off"
     },
     {
       "name": "photo_single",
-      "value": "单段拍照"
+      "value": "Single-segment shooting"
     },
     {
       "name": "photo_double",
-      "value": "双段拍照"
+      "value": "Dual-segment shooting"
     },
     {
       "name": "stabilization_enable",
-      "value": "录像防抖已开启"
+      "value": "Video stabilization is on"
     },
     {
       "name": "stabilization_disabled",
-      "value": "录像防抖已关闭"
+      "value": "Video stabilization is off"
     },
     {
       "name": "grid_line_open",
-      "value": "网格线已开启"
+      "value": "Grid lines are enabled"
     },
     {
       "name": "grid_line_close",
-      "value": "网格线已关闭"
+      "value": "Grid lines are disabled"
     },
     {
       "name": "level_open",
-      "value": "水平仪已开启"
+      "value": "The spirit level is enabled"
     },
     {
       "name": "level_close",
-      "value": "水平仪已关闭"
+      "value": "The spirit level is disabled"
     },
     {
       "name": "flash_auto",
-      "value": "闪关灯已自动"
+      "value": "Flash is in auto mode"
     },
     {
       "name": "flash_close",
-      "value": "闪光灯已关闭"
+      "value": "The flash is off"
     },
     {
       "name": "flash_always",
-      "value": "闪光灯已常亮"
+      "value": "The flash is always on"
     },
     {
       "name": "flash_open",
-      "value": "闪光灯已开启"
+      "value": "The flash is on"
     },
     {
       "name": "preview_image_open",
-      "value": "双路预览已开启"
+      "value": "Dual-channel preview has been enabled"
     },
     {
       "name": "preview_image_close",
-      "value": "双路预览已关闭"
+      "value": "Dual-channel preview has been disabled"
     }
   ]
 }
