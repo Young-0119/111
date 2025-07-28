@@ -21,10 +21,11 @@ import { sensor } from '@kit.SensorServiceKit';
 import { Decimal } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { colorSpaceManager } from '@kit.ArkGraphics2D';
+import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
-import { colorSpaceManager } from '@kit.ArkGraphics2D';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
+
 
 const TAG_LOG = 'video';
 
@@ -95,7 +96,8 @@ export class VideoManager implements OutputManager {
         Logger.info(TAG_LOG, 'Succeeded in preparing');
       }
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to prepare and catch error is  ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to prepare and catch error is  ${err.message}`);
     }
   }
 
@@ -110,7 +112,8 @@ export class VideoManager implements OutputManager {
         await this.avRecorder?.start();
       }
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to start and catch error is  ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to start and catch error is  ${err.message}`);
     }
   }
   // [End start_video]
@@ -128,7 +131,8 @@ export class VideoManager implements OutputManager {
         }
       }
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to stop and catch error is  ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to stop and catch error is  ${err.message}`);
     }
   }
   // [End stop_video]
@@ -141,7 +145,8 @@ export class VideoManager implements OutputManager {
         await this.output?.stop();
       }
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to pause and catch error is  ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to pause and catch error is  ${err.message}`);
     }
   }
   // [End pause_video]
@@ -154,7 +159,8 @@ export class VideoManager implements OutputManager {
         await this.avRecorder.resume();
       }
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to resume and catch error is  ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to resume and catch error is  ${err.message}`);
     }
   }
   // [End resume_video]
@@ -202,32 +208,35 @@ export class VideoManager implements OutputManager {
       cameraManager.getSupportedOutputCapability(device,
         camera.SceneMode.NORMAL_VIDEO);
     let videoProfilesArray: camera.VideoProfile[] | undefined = cameraOutputCap?.videoProfiles;
-    const displayRatio = targetProfile.size.height / targetProfile.size.width;
-    const videoProfile = videoProfilesArray?.find((profile: camera.VideoProfile) => {
-      const profileRatio = profile.size.height / profile.size.width
-      if (this.cameraPosition === 1) {
-        return profile.size.width >= 1080 && profile.size.height >= 1080 &&
-          Math.abs(profileRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
-          profile.frameRateRange.max === 30 && profile.format === camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP;
+    if (videoProfilesArray?.length) {
+      try {
+        const displayRatio = targetProfile.size.width / targetProfile.size.height;
+        const profileWidth = targetProfile.size.width;
+        const videoProfile = videoProfilesArray
+          .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
+          .find(pf => {
+            const pfDisplayRatio = pf.size.width / pf.size.height;
+            return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
+              pf.format === camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP;
+          });
+        if (!videoProfile) {
+          Logger.error(TAG_LOG, 'Failed to get video profile');
+          return;
+        }
+        this.videoProfile = videoProfile;
+      } catch (error) {
+        let err = error as BusinessError;
+        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
       }
-      if (this.qualityLevel === QualityLevel.NORMAL) {
-        return profile.size.width <= 1920 && profile.size.width >= 1080 && profile.size.height >= 1080 &&
-          Math.abs(profileRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE * profile.size.width &&
-          profile.frameRateRange.max === 60 && profile.format === camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP;
-      }
-      if (this.qualityLevel === QualityLevel.HIGHER && this.cameraPosition === 0) {
-        return profile.size.width <= 4096 && profile.size.width >= 3000 &&
-          Math.abs(profileRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE * profile.size.width &&
-          profile.frameRateRange.max === 60 && profile.format === camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP;
-      }
-      return false;
-    })
-    if (!videoProfile) {
-     Logger.info(TAG_LOG, 'Failed to get videoProfile')
     }
-    this.videoProfile = videoProfile;
   }
   // [End create_video_output]
+
+  getCameraPosition(): camera.ImageRotation {
+    return this.cameraPosition === camera.CameraPosition.CAMERA_POSITION_FRONT
+      ? camera.ImageRotation.ROTATION_270
+      : camera.ImageRotation.ROTATION_90
+  }
 
   async setAVConfig() {
     // [Start create_file]
@@ -262,8 +271,7 @@ export class VideoManager implements OutputManager {
       profile: this.avProfile,
       url: `fd://${this.file.fd}`,
       metadata: {
-        videoOrientation: this.cameraPosition === camera.CameraPosition.CAMERA_POSITION_FRONT ?
-        camera.ImageRotation.ROTATION_270.toString() : camera.ImageRotation.ROTATION_90.toString(),
+        videoOrientation: this.getCameraPosition().toString()
       }
     }
     // [End av_config]
@@ -316,23 +324,23 @@ export class VideoManager implements OutputManager {
         return promise;
       }
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to getGravity and catch error is  ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to getGravity and catch error is  ${err.message}`);
       return 0
     }
   }
 
   // [Start get_video_rotation]
   getVideoRotation(deviceDegree: number): camera.ImageRotation {
-    let videoRotation: camera.ImageRotation =
-      this.cameraPosition === camera.CameraPosition.CAMERA_POSITION_FRONT ? camera.ImageRotation.ROTATION_270 :
-      camera.ImageRotation.ROTATION_90;
+    let videoRotation: camera.ImageRotation = this.getCameraPosition();
     try {
       if (this.output) {
-        videoRotation = this.output.getVideoRotation(deviceDegree);
+        videoRotation = this.output?.getVideoRotation(deviceDegree);
         Logger.info(TAG_LOG, `Video rotation is: ${videoRotation}`);
       }
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to getVideoRotation and catch error is: ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to getVideoRotation and catch error is: ${err.message}`);
     }
     return videoRotation;
   }
@@ -355,7 +363,8 @@ export class VideoManager implements OutputManager {
       pixelMap = await avImageGenerator.fetchFrameByTime(timeUs, queryOption, param);
       avImageGenerator.release();
     } catch (error) {
-     Logger.info(TAG_LOG, `Failed to getVideoThumbnail and catch error is  ${error.message}`);
+      let err = error as BusinessError;
+      Logger.info(TAG_LOG, `Failed to getVideoThumbnail and catch error is  ${err.message}`);
     }
     return pixelMap;
   }
@@ -366,46 +375,51 @@ export class VideoManager implements OutputManager {
 
 
   // [Start set_video_stabilization]
-   setVideoStabilizationMode(session: camera.VideoSession): boolean {
+  setVideoStabilizationMode(session: camera.VideoSession): boolean {
     let mode: camera.VideoStabilizationMode = camera.VideoStabilizationMode.AUTO;
     // Check whether video stabilization is supported
     let isSupported: boolean = session.isVideoStabilizationModeSupported(mode);
-    if (isSupported) {
-      Logger.info(TAG_LOG, `setVideoStabilizationMode: ${mode}`);
-      // Set video stabilization
-      session.setVideoStabilizationMode(mode);
-      let activeVideoStabilizationMode = session.getActiveVideoStabilizationMode();
-      Logger.info(TAG_LOG, `activeVideoStabilizationMode: ${activeVideoStabilizationMode}`);
-    } else {
+    if (!isSupported) {
       Logger.info(TAG_LOG, `videoStabilizationMode: ${mode} is not support`);
+      return false;
     }
+    Logger.info(TAG_LOG, `setVideoStabilizationMode: ${mode}`);
+    // Set video stabilization
+    session.setVideoStabilizationMode(mode);
+    let activeVideoStabilizationMode = session.getActiveVideoStabilizationMode();
+    Logger.info(TAG_LOG, `activeVideoStabilizationMode: ${activeVideoStabilizationMode}`);
     return isSupported;
   }
   // [End set_video_stabilization]
 
   // [Start set_video_color_space]
   getSupportedColorSpaces(session: camera.VideoSession): Array<colorSpaceManager.ColorSpace> {
-    let colorSpaces: Array<colorSpaceManager.ColorSpace> = [];
+    let colorSpaces: colorSpaceManager.ColorSpace[] = [];
     try {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
       let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.message}`);
     }
     return colorSpaces;
   }
 
   setColorSpaceAfterCommitConfig(session: camera.VideoSession, isHdr: boolean): void {
-    let colorSpace: colorSpaceManager.ColorSpace = isHdr? colorSpaceManager.ColorSpace.BT2020_HLG_LIMIT : colorSpaceManager.ColorSpace.BT709_LIMIT;
-    let colorSpaces: Array<colorSpaceManager.ColorSpace> = this.getSupportedColorSpaces(session);
-    let isSupportedColorSpaces = colorSpaces.indexOf(colorSpace) >= 0;
-    if (isSupportedColorSpaces) {
-      Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
-      session.setColorSpace(colorSpace);
-      let activeColorSpace:colorSpaceManager.ColorSpace = session.getActiveColorSpace();
-      Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
-    } else {
+    let colorSpace: colorSpaceManager.ColorSpace =
+      isHdr ? colorSpaceManager.ColorSpace.BT2020_HLG_LIMIT : colorSpaceManager.ColorSpace.BT709_LIMIT;
+    let colorSpaces: colorSpaceManager.ColorSpace[] = this.getSupportedColorSpaces(session);
+    if (!colorSpaces.includes(colorSpace)) {
       Logger.info(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
+      return;
+    }
+    Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
+    session.setColorSpace(colorSpace);
+    try {
+      let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
+      Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
+    } catch (error) {
+      let err = error as BusinessError;
+      Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${err.message}`);
     }
   }
   // [Start set_video_color_space]

@@ -13,6 +13,19 @@
  * limitations under the License.
  */
 
+import { sensor } from '@kit.SensorServiceKit';
+import { common } from '@kit.AbilityKit';
+import { display } from '@kit.ArkUI';
+import { curves } from '@kit.ArkUI';
+import {
+  CameraManager,
+  GridLine,
+  ImageReceiverManager,
+  LevelIndicator,
+  PhotoManager,
+  PreviewManager,
+  VideoManager
+} from 'camera';
 import CameraConstant from '../constants/Constants';
 import { calCameraPoint, getClampedChildPosition, limitNumberInRange, showToast } from '../utils/CommonUtil';
 import RefreshableTimer from '../utils/RefreshableTimer';
@@ -21,16 +34,7 @@ import ZoomButtonsView from '../views/ZoomButtonsView';
 import ModeButtonsView from '../views/ModeButtonsView';
 import SettingButtonsView from '../views/SettingButtonsView';
 import OperateButtonsView from '../views/OperateButtonsView';
-import { sensor } from '@kit.SensorServiceKit';
-import { common } from '@kit.AbilityKit';
-import { display } from '@kit.ArkUI';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
-import { CameraManager,
-  GridLine,
-  ImageReceiverManager,
-  LevelIndicator,
-  PhotoManager, PreviewManager, VideoManager } from 'camera';
-import { curves } from '@kit.ArkUI';
 
 @Extend(SymbolGlyph)
 function funcButtonStyle() {
@@ -385,13 +389,12 @@ struct Index {
 
   @Builder
   previewImageButton() {
-    SymbolGlyph(
-      this.isPreviewImageVisible ? $r('sys.symbol.eye') : $r('sys.symbol.eye_slash')
-    )
+    SymbolGlyph(this.isPreviewImageVisible ? $r('sys.symbol.eye') : $r('sys.symbol.eye_slash'))
       .funcButtonStyle()
       .onClick(() => {
         this.isPreviewImageVisible = !this.isPreviewImageVisible;
-        const message = this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
+        const message =
+          this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
         showToast(this.getUIContext(), message);
       })
   }
@@ -490,6 +493,5 @@ struct Index {
     .height('100%')
     .width('100%')
     .backgroundColor(Color.Black)
-    .onClick(() => {})
   }
 }

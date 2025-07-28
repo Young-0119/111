@@ -14,7 +14,7 @@
  */
 
 import { display, window } from '@kit.ArkUI';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
+import { Logger } from 'commons';
 
 const TAG = 'WindowUtil'
 

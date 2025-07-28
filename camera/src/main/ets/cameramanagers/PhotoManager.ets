@@ -19,10 +19,11 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { sensor } from '@kit.SensorServiceKit';
 import { Decimal } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
-import OutputManager, { CreateOutputConfig } from './OutputManager';
 import { colorSpaceManager } from '@kit.ArkGraphics2D';
 import { geoLocationManager } from '@kit.LocationKit';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
+import { Logger } from 'commons';
+import OutputManager, { CreateOutputConfig } from './OutputManager';
+import CameraConstant from '../constants/CameraConstants';
 
 const TAG_LOG = 'PhotoManager';
 
@@ -62,11 +63,10 @@ export class PhotoManager implements OutputManager {
   // [Start create_photo_output]
   public createPhotoOutput(cameraManager: camera.CameraManager, cameraDevice: camera.CameraDevice,
     profile: camera.Profile) {
-    const PROFILE_DIFFERENCE = 1e-10;
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
     const cameraOutputCapability =
       cameraManager.getSupportedOutputCapability(cameraDevice, camera.SceneMode.NORMAL_PHOTO);
-    let photoProfilesArray: Array<camera.Profile> | undefined = cameraOutputCapability?.photoProfiles;
+    let photoProfilesArray: camera.Profile[] | undefined = cameraOutputCapability?.photoProfiles;
     if (photoProfilesArray?.length) {
       try {
         const displayRatio = profile.size.width / profile.size.height;
@@ -75,7 +75,7 @@ export class PhotoManager implements OutputManager {
           .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
           .find(pf => {
             const pfDisplayRatio = pf.size.width / pf.size.height;
-            return Math.abs(pfDisplayRatio - displayRatio) <= PROFILE_DIFFERENCE &&
+            return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
               pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
           });
         if (!PhotoProfile) {
@@ -103,7 +103,8 @@ export class PhotoManager implements OutputManager {
       assetChangeRequest.saveCameraPhoto();
       await phAccessHelper.applyChanges(assetChangeRequest);
       phAccessHelper.release();
-    } catch (err) {
+    } catch (error) {
+      let err = error as BusinessError;
       Logger.error(TAG_LOG, `apply saveCameraPhoto failed with error: ${err.code}, ${err.message}`);
     }
   }
@@ -117,12 +118,10 @@ export class PhotoManager implements OutputManager {
           return;
         }
         let imageSource = image.createImageSource(data);
-        imageSource.createPixelMap((err: BusinessError, data: image.PixelMap) => {
-          if (err) {
-            Logger.error(TAG_LOG, `createPixelMap err:${err.code}`);
-            return;
-          }
-          callback(data, photoAsset.uri);
+        imageSource.createPixelMap().then((pixelMap: image.PixelMap) => {
+          callback(pixelMap, photoAsset.uri);
+        }).catch((err: BusinessError) => {
+          Logger.error(TAG_LOG, `createPixelMap err:${err.code}`);
         })
       }
     }
@@ -166,12 +165,11 @@ export class PhotoManager implements OutputManager {
         return;
       }
       let buffer: ArrayBuffer;
-      if (component.byteBuffer) {
-        buffer = component.byteBuffer;
-      } else {
+      if (!component.byteBuffer) {
         Logger.error(TAG_LOG, 'byteBuffer is null');
         return;
       }
+      buffer = component.byteBuffer;
       let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
       let extension: string = 'jpg';
       let options: photoAccessHelper.CreateOptions = {
@@ -226,12 +224,18 @@ export class PhotoManager implements OutputManager {
       let err = error as BusinessError;
       Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.code}`);
     }
-    let isSupportedColorSpaces = colorSpaces.indexOf(colorSpace) >= 0;
-    if (isSupportedColorSpaces) {
-      session.setColorSpace(colorSpace);
+    if (!colorSpaces.includes(colorSpace)) {
+      Logger.info(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
+      return;
+    }
+    Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
+    session.setColorSpace(colorSpace);
+    try {
       let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
-    } else {
-      Logger.error(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
+      Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
+    } catch (error) {
+      let err = error as BusinessError;
+      Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${err.message}`);
     }
   }
   // [End set_color_space]

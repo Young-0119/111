@@ -14,7 +14,7 @@
  */
 
 import { abilityAccessCtrl, Context, Permissions } from '@kit.AbilityKit';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
+import { Logger } from 'commons';
 
 const TAG = 'PermissionManager';
 

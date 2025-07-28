@@ -15,10 +15,10 @@
 
 import { image } from '@kit.ImageKit';
 import { camera } from '@kit.CameraKit';
-import { BusinessError } from '@kit.BasicServicesKit';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
-import OutputManager, { CreateOutputConfig } from './OutputManager';
 import { display } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { Logger } from 'commons';
+import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
 
 const TAG = 'ImageReceiverManager';

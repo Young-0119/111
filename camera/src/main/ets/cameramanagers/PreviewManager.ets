@@ -14,8 +14,8 @@
  */
 
 import { camera } from '@kit.CameraKit';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
 
@@ -61,7 +61,7 @@ export class PreviewManager implements OutputManager {
   addFrameStartEventListener(output: camera.PreviewOutput) {
     output.on('frameStart', (err: BusinessError) => {
       if (err !== undefined && err.code !== 0) {
-        Logger.error(TAG_LOG, `FrameStart callback Error, errorCode: ${err.code}`);
+        Logger.error(TAG_LOG, `FrameStart callback Error, errorMessage: ${err.message}`);
         return;
       }
       Logger.info(TAG_LOG, 'Preview frame started');
@@ -72,7 +72,7 @@ export class PreviewManager implements OutputManager {
   addFrameEndEventListener(output: camera.PreviewOutput) {
     output.on('frameEnd', (err: BusinessError) => {
       if (err !== undefined && err.code !== 0) {
-        Logger.error(TAG_LOG, `FrameStart callback Error, errorCode: ${err.code}`);
+        Logger.error(TAG_LOG, `FrameStart callback Error, errorMessage: ${err.message}`);
         return;
       }
       Logger.info(TAG_LOG, 'Preview frame end');
