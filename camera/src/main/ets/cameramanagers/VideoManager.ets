@@ -20,12 +20,10 @@ import { fileIo } from '@kit.CoreFileKit';
 import { sensor } from '@kit.SensorServiceKit';
 import { Decimal } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { colorSpaceManager } from '@kit.ArkGraphics2D';
 import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
-
 
 const TAG_LOG = 'video';
 
@@ -76,7 +74,7 @@ export class VideoManager implements OutputManager {
         Logger.info(TAG_LOG, 'on avRecorder state change: ', state)
       });
     } catch (error) {
-     Logger.info(TAG_LOG, 'createAVRecorder call failed. error code: %{public}s', (error as BusinessError).code);
+      Logger.info(TAG_LOG, 'createAVRecorder call failed. error code: %{public}s', error.code);
     }
     if (this.avRecorder === undefined || this.avRecorder === null) {
       return;
@@ -96,15 +94,22 @@ export class VideoManager implements OutputManager {
         Logger.info(TAG_LOG, 'Succeeded in preparing');
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to prepare and catch error is  ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to prepare and catch error is  ${error.message}`);
     }
   }
 
+  isSupportMirror() {
+    let isSupported: boolean | undefined = this.output?.isMirrorSupported();
+    return isSupported;
+  }
+
   // [Start start_video]
-  async start() {
+  async start(isFront: boolean) {
     try {
       if (this.avRecorder?.state === AVRecorderState.PREPARED) {
+        if (this.isSupportMirror() && isFront) {
+          this.output?.enableMirror(true)
+        }
         // [StartExclude start_video]
         await this.avRecorder.updateRotation(this.getVideoRotation(await this.getGravity()));
         // [EndExclude start_video]
@@ -112,8 +117,7 @@ export class VideoManager implements OutputManager {
         await this.avRecorder?.start();
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to start and catch error is  ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to start and catch error is  ${error.message}`);
     }
   }
   // [End start_video]
@@ -131,8 +135,7 @@ export class VideoManager implements OutputManager {
         }
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to stop and catch error is  ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to stop and catch error is  ${error.message}`);
     }
   }
   // [End stop_video]
@@ -145,8 +148,7 @@ export class VideoManager implements OutputManager {
         await this.output?.stop();
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to pause and catch error is  ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to pause and catch error is  ${error.message}`);
     }
   }
   // [End pause_video]
@@ -159,8 +161,7 @@ export class VideoManager implements OutputManager {
         await this.avRecorder.resume();
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to resume and catch error is  ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to resume and catch error is  ${error.message}`);
     }
   }
   // [End resume_video]
@@ -197,7 +198,7 @@ export class VideoManager implements OutputManager {
       this.output = cameraManager.createVideoOutput(this.videoProfile, videoSurfaceId);
     } catch (error) {
       Logger.error(TAG_LOG,
-        `Failed to create the output instance. error code: ${(error as BusinessError).code}`);
+        `Failed to create the output instance. error code: ${error.code}`);
     }
   }
 
@@ -225,14 +226,13 @@ export class VideoManager implements OutputManager {
         }
         this.videoProfile = videoProfile;
       } catch (error) {
-        let err = error as BusinessError;
-        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(error)}`);
       }
     }
   }
   // [End create_video_output]
 
-  getCameraPosition(): camera.ImageRotation {
+  getCameraImageRotation(): camera.ImageRotation {
     return this.cameraPosition === camera.CameraPosition.CAMERA_POSITION_FRONT
       ? camera.ImageRotation.ROTATION_270
       : camera.ImageRotation.ROTATION_90
@@ -271,7 +271,7 @@ export class VideoManager implements OutputManager {
       profile: this.avProfile,
       url: `fd://${this.file.fd}`,
       metadata: {
-        videoOrientation: this.getCameraPosition().toString()
+        videoOrientation: this.getCameraImageRotation().toString()
       }
     }
     // [End av_config]
@@ -324,23 +324,21 @@ export class VideoManager implements OutputManager {
         return promise;
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to getGravity and catch error is  ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to getGravity and catch error is  ${error.message}`);
       return 0
     }
   }
 
   // [Start get_video_rotation]
   getVideoRotation(deviceDegree: number): camera.ImageRotation {
-    let videoRotation: camera.ImageRotation = this.getCameraPosition();
+    let videoRotation: camera.ImageRotation = this.getCameraImageRotation();
     try {
       if (this.output) {
-        videoRotation = this.output?.getVideoRotation(deviceDegree);
+        videoRotation = this.output.getVideoRotation(deviceDegree);
         Logger.info(TAG_LOG, `Video rotation is: ${videoRotation}`);
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to getVideoRotation and catch error is: ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to getVideoRotation and catch error is: ${error.message}`);
     }
     return videoRotation;
   }
@@ -363,8 +361,7 @@ export class VideoManager implements OutputManager {
       pixelMap = await avImageGenerator.fetchFrameByTime(timeUs, queryOption, param);
       avImageGenerator.release();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.info(TAG_LOG, `Failed to getVideoThumbnail and catch error is  ${err.message}`);
+      Logger.info(TAG_LOG, `Failed to getVideoThumbnail and catch error is  ${error.message}`);
     }
     return pixelMap;
   }
@@ -398,8 +395,7 @@ export class VideoManager implements OutputManager {
     try {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.message}`);
+      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${error.message}`);
     }
     return colorSpaces;
   }
@@ -418,8 +414,7 @@ export class VideoManager implements OutputManager {
       let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
       Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${err.message}`);
+      Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${error.message}`);
     }
   }
   // [Start set_video_color_space]

@@ -393,8 +393,7 @@ struct Index {
       .funcButtonStyle()
       .onClick(() => {
         this.isPreviewImageVisible = !this.isPreviewImageVisible;
-        const message =
-          this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
+        const message = this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
         showToast(this.getUIContext(), message);
       })
   }
@@ -493,5 +492,6 @@ struct Index {
     .height('100%')
     .width('100%')
     .backgroundColor(Color.Black)
+    .onClick(() => {})
   }
 }

@@ -84,8 +84,7 @@ export class PhotoManager implements OutputManager {
         }
         cameraPhotoOutput = cameraManager.createPhotoOutput(PhotoProfile);
       } catch (error) {
-        let err = error as BusinessError;
-        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(error)}`);
       }
     }
     this.output = cameraPhotoOutput;
@@ -104,8 +103,7 @@ export class PhotoManager implements OutputManager {
       await phAccessHelper.applyChanges(assetChangeRequest);
       phAccessHelper.release();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `apply saveCameraPhoto failed with error: ${err.code}, ${err.message}`);
+      Logger.error(TAG_LOG, `apply saveCameraPhoto failed with error: ${error.code}, ${error.message}`);
     }
   }
 
@@ -164,12 +162,11 @@ export class PhotoManager implements OutputManager {
         Logger.error(TAG_LOG, 'getComponent failed');
         return;
       }
-      let buffer: ArrayBuffer;
-      if (!component.byteBuffer) {
+      const buffer: ArrayBuffer = component.byteBuffer;
+      if (!buffer) {
         Logger.error(TAG_LOG, 'byteBuffer is null');
         return;
       }
-      buffer = component.byteBuffer;
       let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
       let extension: string = 'jpg';
       let options: photoAccessHelper.CreateOptions = {
@@ -189,7 +186,6 @@ export class PhotoManager implements OutputManager {
       imageObj.release();
     });
   }
-
   // [End save_photo_single]
 
   setPhotoOutputCallback(isSingle: boolean) {
@@ -221,8 +217,7 @@ export class PhotoManager implements OutputManager {
     try {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${error.code}`);
     }
     if (!colorSpaces.includes(colorSpace)) {
       Logger.info(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
@@ -234,8 +229,7 @@ export class PhotoManager implements OutputManager {
       let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
       Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${err.message}`);
+      Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${error.message}`);
     }
   }
   // [End set_color_space]
@@ -254,8 +248,7 @@ export class PhotoManager implements OutputManager {
         photoSession.setFlashMode(flashMode || camera.FlashMode.FLASH_MODE_CLOSE);
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `Failed to hasFlash. error: ${JSON.stringify(err)}`);
+      Logger.error(TAG_LOG, `Failed to hasFlash. error: ${JSON.stringify(error)}`);
     }
   }
 
@@ -267,9 +260,8 @@ export class PhotoManager implements OutputManager {
         photoSession.setFocusMode(focusMode || defaultMode);
       }
     } catch (error) {
-      let err = error as BusinessError;
       Logger.error(TAG_LOG,
-        `Failed to check whether the focus mode is supported. error: ${JSON.stringify(err)}`);
+        `Failed to check whether the focus mode is supported. error: ${JSON.stringify(error)}`);
     }
   }
 
@@ -277,8 +269,7 @@ export class PhotoManager implements OutputManager {
     try {
       photoSession.setFocusPoint(focusPoint);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The setFocusPoint call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The setFocusPoint call failed. error code: ${error.code}`);
     }
   }
 
@@ -291,8 +282,7 @@ export class PhotoManager implements OutputManager {
           photoZoomRatio = zoomRatioRange[0];
         }
       } catch (error) {
-        let err = error as BusinessError;
-        Logger.error(TAG_LOG, `Failed to get the zoom ratio range. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to get the zoom ratio range. error: ${JSON.stringify(error)}`);
       }
     }
     photoSession.setZoomRatio(zoomRatio || photoZoomRatio);
@@ -303,8 +293,7 @@ export class PhotoManager implements OutputManager {
     try {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG,`The getSupportedColorSpaces call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG,`The getSupportedColorSpaces call failed. error code: ${error.code}`);
     }
     return colorSpaces;
   }
@@ -315,8 +304,7 @@ export class PhotoManager implements OutputManager {
     try {
       photoRotation = photoOutput.getPhotoRotation(deviceDegree);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The photoOutput.getPhotoRotation call failed. error code: ${error.code}`);
     }
     return photoRotation;
   }
@@ -376,8 +364,7 @@ export class PhotoManager implements OutputManager {
     try {
       isSupported = photoOutput.isMovingPhotoSupported();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The isMovingPhotoSupported call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The isMovingPhotoSupported call failed. error code: ${error.code}`);
     }
     return isSupported;
   }
@@ -389,8 +376,7 @@ export class PhotoManager implements OutputManager {
     try {
       this.output?.enableMovingPhoto(enabled);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The enableMovingPhoto call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The enableMovingPhoto call failed. error code: ${error.code}`);
     }
   }
 

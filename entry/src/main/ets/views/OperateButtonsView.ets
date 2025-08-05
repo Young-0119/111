@@ -105,7 +105,7 @@ struct OperateButtonsView {
     })
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
-      this.videoManager.start();
+      this.videoManager.start(this.previewVM.isFront);
     })
   }
 
