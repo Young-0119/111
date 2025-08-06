@@ -333,10 +333,8 @@ export class VideoManager implements OutputManager {
   getVideoRotation(deviceDegree: number): camera.ImageRotation {
     let videoRotation: camera.ImageRotation = this.getCameraImageRotation();
     try {
-      if (this.output) {
-        videoRotation = this.output.getVideoRotation(deviceDegree);
+        videoRotation = this.output!.getVideoRotation(deviceDegree);
         Logger.info(TAG_LOG, `Video rotation is: ${videoRotation}`);
-      }
     } catch (error) {
       Logger.info(TAG_LOG, `Failed to getVideoRotation and catch error is: ${error.message}`);
     }
