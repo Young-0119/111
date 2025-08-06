@@ -19,10 +19,11 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { sensor } from '@kit.SensorServiceKit';
 import { Decimal } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
-import OutputManager, { CreateOutputConfig } from './OutputManager';
 import { colorSpaceManager } from '@kit.ArkGraphics2D';
 import { geoLocationManager } from '@kit.LocationKit';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
+import { Logger } from 'commons';
+import OutputManager, { CreateOutputConfig } from './OutputManager';
+import CameraConstant from '../constants/CameraConstants';
 
 const TAG_LOG = 'PhotoManager';
 
@@ -62,11 +63,10 @@ export class PhotoManager implements OutputManager {
   // [Start create_photo_output]
   public createPhotoOutput(cameraManager: camera.CameraManager, cameraDevice: camera.CameraDevice,
     profile: camera.Profile) {
-    const PROFILE_DIFFERENCE = 1e-10;
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
     const cameraOutputCapability =
       cameraManager.getSupportedOutputCapability(cameraDevice, camera.SceneMode.NORMAL_PHOTO);
-    let photoProfilesArray: Array<camera.Profile> | undefined = cameraOutputCapability?.photoProfiles;
+    let photoProfilesArray: camera.Profile[] | undefined = cameraOutputCapability?.photoProfiles;
     if (photoProfilesArray?.length) {
       try {
         const displayRatio = profile.size.width / profile.size.height;
@@ -75,7 +75,7 @@ export class PhotoManager implements OutputManager {
           .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
           .find(pf => {
             const pfDisplayRatio = pf.size.width / pf.size.height;
-            return Math.abs(pfDisplayRatio - displayRatio) <= PROFILE_DIFFERENCE &&
+            return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
               pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
           });
         if (!PhotoProfile) {
@@ -84,8 +84,7 @@ export class PhotoManager implements OutputManager {
         }
         cameraPhotoOutput = cameraManager.createPhotoOutput(PhotoProfile);
       } catch (error) {
-        let err = error as BusinessError;
-        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(error)}`);
       }
     }
     this.output = cameraPhotoOutput;
@@ -103,8 +102,8 @@ export class PhotoManager implements OutputManager {
       assetChangeRequest.saveCameraPhoto();
       await phAccessHelper.applyChanges(assetChangeRequest);
       phAccessHelper.release();
-    } catch (err) {
-      Logger.error(TAG_LOG, `apply saveCameraPhoto failed with error: ${err.code}, ${err.message}`);
+    } catch (error) {
+      Logger.error(TAG_LOG, `apply saveCameraPhoto failed with error: ${error.code}, ${error.message}`);
     }
   }
 
@@ -117,12 +116,10 @@ export class PhotoManager implements OutputManager {
           return;
         }
         let imageSource = image.createImageSource(data);
-        imageSource.createPixelMap((err: BusinessError, data: image.PixelMap) => {
-          if (err) {
-            Logger.error(TAG_LOG, `createPixelMap err:${err.code}`);
-            return;
-          }
-          callback(data, photoAsset.uri);
+        imageSource.createPixelMap().then((pixelMap: image.PixelMap) => {
+          callback(pixelMap, photoAsset.uri);
+        }).catch((err: BusinessError) => {
+          Logger.error(TAG_LOG, `createPixelMap err:${err.code}`);
         })
       }
     }
@@ -165,10 +162,8 @@ export class PhotoManager implements OutputManager {
         Logger.error(TAG_LOG, 'getComponent failed');
         return;
       }
-      let buffer: ArrayBuffer;
-      if (component.byteBuffer) {
-        buffer = component.byteBuffer;
-      } else {
+      const buffer: ArrayBuffer = component.byteBuffer;
+      if (!buffer) {
         Logger.error(TAG_LOG, 'byteBuffer is null');
         return;
       }
@@ -191,7 +186,6 @@ export class PhotoManager implements OutputManager {
       imageObj.release();
     });
   }
-
   // [End save_photo_single]
 
   setPhotoOutputCallback(isSingle: boolean) {
@@ -223,15 +217,19 @@ export class PhotoManager implements OutputManager {
     try {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${error.code}`);
     }
-    let isSupportedColorSpaces = colorSpaces.indexOf(colorSpace) >= 0;
-    if (isSupportedColorSpaces) {
-      session.setColorSpace(colorSpace);
+    if (!colorSpaces.includes(colorSpace)) {
+      Logger.info(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
+      return;
+    }
+    Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
+    session.setColorSpace(colorSpace);
+    try {
       let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
-    } else {
-      Logger.error(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
+      Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
+    } catch (error) {
+      Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${error.message}`);
     }
   }
   // [End set_color_space]
@@ -250,8 +248,7 @@ export class PhotoManager implements OutputManager {
         photoSession.setFlashMode(flashMode || camera.FlashMode.FLASH_MODE_CLOSE);
       }
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `Failed to hasFlash. error: ${JSON.stringify(err)}`);
+      Logger.error(TAG_LOG, `Failed to hasFlash. error: ${JSON.stringify(error)}`);
     }
   }
 
@@ -263,9 +260,8 @@ export class PhotoManager implements OutputManager {
         photoSession.setFocusMode(focusMode || defaultMode);
       }
     } catch (error) {
-      let err = error as BusinessError;
       Logger.error(TAG_LOG,
-        `Failed to check whether the focus mode is supported. error: ${JSON.stringify(err)}`);
+        `Failed to check whether the focus mode is supported. error: ${JSON.stringify(error)}`);
     }
   }
 
@@ -273,8 +269,7 @@ export class PhotoManager implements OutputManager {
     try {
       photoSession.setFocusPoint(focusPoint);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The setFocusPoint call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The setFocusPoint call failed. error code: ${error.code}`);
     }
   }
 
@@ -287,8 +282,7 @@ export class PhotoManager implements OutputManager {
           photoZoomRatio = zoomRatioRange[0];
         }
       } catch (error) {
-        let err = error as BusinessError;
-        Logger.error(TAG_LOG, `Failed to get the zoom ratio range. error: ${JSON.stringify(err)}`);
+        Logger.error(TAG_LOG, `Failed to get the zoom ratio range. error: ${JSON.stringify(error)}`);
       }
     }
     photoSession.setZoomRatio(zoomRatio || photoZoomRatio);
@@ -299,8 +293,7 @@ export class PhotoManager implements OutputManager {
     try {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG,`The getSupportedColorSpaces call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG,`The getSupportedColorSpaces call failed. error code: ${error.code}`);
     }
     return colorSpaces;
   }
@@ -311,8 +304,7 @@ export class PhotoManager implements OutputManager {
     try {
       photoRotation = photoOutput.getPhotoRotation(deviceDegree);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The photoOutput.getPhotoRotation call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The photoOutput.getPhotoRotation call failed. error code: ${error.code}`);
     }
     return photoRotation;
   }
@@ -372,8 +364,7 @@ export class PhotoManager implements OutputManager {
     try {
       isSupported = photoOutput.isMovingPhotoSupported();
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The isMovingPhotoSupported call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The isMovingPhotoSupported call failed. error code: ${error.code}`);
     }
     return isSupported;
   }
@@ -385,8 +376,7 @@ export class PhotoManager implements OutputManager {
     try {
       this.output?.enableMovingPhoto(enabled);
     } catch (error) {
-      let err = error as BusinessError;
-      Logger.error(TAG_LOG, `The enableMovingPhoto call failed. error code: ${err.code}`);
+      Logger.error(TAG_LOG, `The enableMovingPhoto call failed. error code: ${error.code}`);
     }
   }
 

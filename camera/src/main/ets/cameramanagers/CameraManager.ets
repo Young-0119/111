@@ -14,8 +14,8 @@
  */
 
 import { camera } from '@kit.CameraKit';
-import { Logger } from 'commons/src/main/ets/utils/Logger';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 
 const TAG = 'CameraManager';
@@ -36,8 +36,8 @@ export class CameraManager {
 
   addCameraStatusListener() {
     this.cameraManager.on('cameraStatus', (err: BusinessError, statusInfo: camera.CameraStatusInfo) => {
-      if (err && err.code) {
-        Logger.error(TAG, 'cameraStatus with errorCode = ' + err.code);
+      if (err && err.message) {
+        Logger.error(TAG, 'cameraStatus with errorMessage = ' + err.message);
         return;
       }
       Logger.info(TAG, `cameraStatusInfo: camera is ${statusInfo.camera.cameraId}, status is ${statusInfo.status}`);

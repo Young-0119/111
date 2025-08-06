@@ -15,9 +15,8 @@
 
 import { image } from '@kit.ImageKit';
 import { common } from '@kit.AbilityKit';
-import { camera } from '@kit.CameraKit';
-import PreviewViewModel from '../viewmodels/PreviewViewModel';
 import { AVRecorderState, CameraManager, PhotoManager, VideoManager } from 'camera';
+import PreviewViewModel from '../viewmodels/PreviewViewModel';
 
 @Component
 struct OperateButtonsView {
@@ -106,7 +105,7 @@ struct OperateButtonsView {
     })
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
-      this.videoManager.start();
+      this.videoManager.start(this.previewVM.isFront);
     })
   }
 
