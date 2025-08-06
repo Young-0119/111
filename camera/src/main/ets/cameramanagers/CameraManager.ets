@@ -87,6 +87,7 @@ export class CameraManager {
       // [End session]
       this.session = session as (camera.PhotoSession | camera.VideoSession);
       this.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO);
+      this.setExposureMode(camera.ExposureMode.EXPOSURE_MODE_AUTO);
     } catch (e) {
       Logger.error(TAG, `Failed to start camera session. Cause ${JSON.stringify(e)}`);
     }
@@ -155,6 +156,31 @@ export class CameraManager {
     }
   }
   // [End setFocusPoint]
+
+  // [Start setExposureMode]
+  setExposureMode(exposureMode: camera.ExposureMode) {
+    try {
+      const isSupported = this.session?.isExposureModeSupported(exposureMode);
+      if (!isSupported) {
+        Logger.error(TAG, `setExposureMode error: focus mode ${exposureMode} is not supported`);
+        return;
+      }
+      this.session?.setExposureMode(exposureMode);
+    } catch(e) {
+      Logger.error(TAG, 'setExposureMode error ' + JSON.stringify(e));
+    }
+  }
+  // [End setExposureMode]
+
+  // [Start setMeteringPoint]
+  setMeteringPoint(point: camera.Point) {
+    try {
+      this.session?.setMeteringPoint(point);
+    } catch(e) {
+      Logger.error(TAG, 'setMeteringPoint error ' + JSON.stringify(e));
+    }
+  }
+  // [End setMeteringPoint]
 
   setZoomRatio(zoom: number) {
     try {

@@ -75,6 +75,7 @@ struct Index {
   private focusBoxTimer: RefreshableTimer = new RefreshableTimer(() => {
     this.isFocusBoxVisible = false;
   }, 3 * 1000);
+  private exposureFontSize: number = 24;
 
   @State isSleeping: boolean = false;
   private sleepTimer?: RefreshableTimer;
@@ -286,10 +287,11 @@ struct Index {
             previewSize.height
           );
           this.cameraManager.setFocusPoint(cameraPoint);
+          this.cameraManager.setMeteringPoint(cameraPoint);
           this.focusBoxPosition = getClampedChildPosition(this.focusBoxSize, {
             width: this.getUIContext().px2vp(previewSize.width),
             height: this.getUIContext().px2vp(previewSize.height)
-          }, event)
+          }, event);
           this.focusBoxTimer.refresh();
         })
       // [EndExclude Stack]
@@ -308,6 +310,10 @@ struct Index {
           .width(80)
           .height(80)
           .position(this.focusBoxPosition)
+        SymbolGlyph($r('sys.symbol.sun_max'))
+          .fontSize(this.exposureFontSize)
+          .fontColor([Color.White])
+          .position(this.getExposurePosition())
       }
 
       if(this.isDelayTakePhoto){
@@ -403,6 +409,22 @@ struct Index {
     const ratio = this.previewVM.getPreviewRatio();
     const displayRatio = rotation === 90 || rotation === 270 ? 1 / ratio : ratio;
     return this.PreviewImageHeight / displayRatio;
+  }
+
+  getExposurePosition(): Edges {
+    const focusBoxLeft = this.focusBoxPosition.left as number;
+    const focusBoxTop = this.focusBoxPosition.top as number;
+    const exposureWidth = this.exposureFontSize;
+    const exposureHeight = this.exposureFontSize;
+    const focusBoxWidth = this.focusBoxSize.width;
+    const focusBoxHeight = this.focusBoxSize.height;
+    const previewWidth = this.getUIContext().px2vp(this.previewVM.previewSize.width);
+    const GAP = 10;
+    const top = focusBoxTop - exposureHeight / 2 + focusBoxHeight / 2;
+    const left = focusBoxLeft > previewWidth / 2
+      ? focusBoxLeft - GAP - exposureWidth
+      : focusBoxLeft + focusBoxWidth + GAP;
+    return { top, left };
   }
 
   @Builder
