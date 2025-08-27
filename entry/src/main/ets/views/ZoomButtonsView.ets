@@ -54,8 +54,8 @@ struct ZoomButtonsView {
           .borderRadius('50%')
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            this.cameraManager.setSmoothZoom(zoom)
-            this.currentZoom = zoom
+            this.cameraManager.setSmoothZoom(zoom);
+            this.currentZoom = zoom;
           })
       }, (zoom: number) => zoom.toString())
     }

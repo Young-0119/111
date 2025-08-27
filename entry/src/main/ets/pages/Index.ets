@@ -85,6 +85,7 @@ struct Index {
   @State currentZoom: number = 1;
   @State isZoomPinching: boolean = false;
   private originZoomBeforePinch: number = 1; // record zoom after pinch, sale base it.
+  @State isStabilizationEnabled: boolean = false;
 
   @State previewImage: PixelMap | ResourceStr = '';
   private PreviewImageHeight: number = 80;
@@ -266,8 +267,10 @@ struct Index {
             .onActionStart(() => {
               this.originZoomBeforePinch = this.currentZoom;
               this.isZoomPinching = true;
+              this.sleepTimer?.refresh();
             })
             .onActionUpdate((event: GestureEvent) => {
+              if (this.previewVM.isVideoMode() && this.isStabilizationEnabled) return;
               const targetZoom = this.originZoomBeforePinch * event.scale;
               this.currentZoom = limitNumberInRange(targetZoom, this.zoomRange);
               this.cameraManager.setZoomRatio(this.currentZoom);
@@ -474,10 +477,12 @@ struct Index {
         videoManager: this.videoManager,
         photoDelayTime: this.photoDelayTime,
         isSinglePhoto: this.isSinglePhoto,
-        isLivePhoto: this.isLivePhoto
+        isLivePhoto: this.isLivePhoto,
+        isStabilizationEnabled: this.isStabilizationEnabled
       })
       if (!this.photoRemainder) {
-        if (!this.previewVM.isFront) {
+        if (!this.previewVM.isFront &&
+          !(this.isStabilizationEnabled && this.previewVM.isVideoMode())) {
           ZoomButtonsView({
             cameraManager: this.cameraManager,
             zoomRange: this.zoomRange,
