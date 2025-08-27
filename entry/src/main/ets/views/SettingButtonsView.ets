@@ -70,7 +70,7 @@ struct SettingButtonsView {
   @Require photoManager: PhotoManager;
   @Link videoManager: VideoManager;
   @Link photoDelayTime: number;
-  @State isStabilizationEnabled: boolean = false;
+  @Link isStabilizationEnabled: boolean;
   @Link isSinglePhoto: boolean;
   @Link previewVM: PreviewViewModel;
 
