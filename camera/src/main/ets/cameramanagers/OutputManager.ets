@@ -16,7 +16,7 @@
 import { camera } from '@kit.CameraKit';
 
 export interface CreateOutputConfig {
-  cameraManager: camera.CameraManager;
+  cameraManager?: camera.CameraManager;
   device: camera.CameraDevice;
   profile: camera.Profile;
   sceneMode?: camera.SceneMode;

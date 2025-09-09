@@ -33,10 +33,10 @@ export class PreviewManager implements OutputManager {
 
   // [Start createOutput]
   async createOutput(config: CreateOutputConfig) {
-    const cameraOutputCap = config.cameraManager.getSupportedOutputCapability(config.device, config.sceneMode);
+    const cameraOutputCap = config.cameraManager?.getSupportedOutputCapability(config.device, config.sceneMode);
     const displayRatio = config.profile.size.width / config.profile.size.height;
     const profileWidth = config.profile.size.width;
-    const previewProfile = cameraOutputCap.previewProfiles
+    const previewProfile = cameraOutputCap?.previewProfiles
       .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
       .find(pf => {
         const pfDisplayRatio = pf.size.width / pf.size.height;
@@ -48,8 +48,10 @@ export class PreviewManager implements OutputManager {
       return;
     }
     try {
-      this.output = config.cameraManager.createPreviewOutput(previewProfile, config.surfaceId);
-      this.addOutputListener(this.output);
+      this.output = config.cameraManager?.createPreviewOutput(previewProfile, config.surfaceId);
+      if (this.output) {
+        this.addOutputListener(this.output);
+      }
     } catch (exception) {
       Logger.error(TAG_LOG, `createPreviewOutput failed, code is ${exception.code}, message is ${exception.message}`);
     }

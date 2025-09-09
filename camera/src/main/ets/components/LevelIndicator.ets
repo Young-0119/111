@@ -18,7 +18,7 @@ import { sensor } from '@kit.SensorServiceKit';
 import { Logger } from 'commons';
 
 const ANGLE_DIFFERENCE: number = 3;
-const TAG = 'LevelIndicator'
+const TAG = 'LevelIndicator';
 
 // [Start LevelIndicator]
 @Component

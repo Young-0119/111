@@ -21,21 +21,25 @@ import OutputManager, { CreateOutputConfig } from './OutputManager';
 const TAG = 'CameraManager';
 
 export class CameraManager {
-  private cameraManager: camera.CameraManager;
+  private cameraManager?: camera.CameraManager;
   session?: camera.PhotoSession | camera.VideoSession;
   private cameraInput?: camera.CameraInput;
   private outputManagers: OutputManager[] = [];
 
   constructor(context: Context, outputManagers: OutputManager[]) {
-    // [Start cameraManager]
-    this.cameraManager = camera.getCameraManager(context);
-    // [End cameraManager]
-    this.outputManagers = outputManagers;
-    this.addCameraStatusListener();
+    try {
+      // [Start cameraManager]
+      this.cameraManager = camera.getCameraManager(context);
+      // [End cameraManager]
+      this.outputManagers = outputManagers;
+      this.addCameraStatusListener();
+    } catch (exception) {
+      Logger.error(TAG, `constructor failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
 
   addCameraStatusListener() {
-    this.cameraManager.on('cameraStatus', (err: BusinessError, statusInfo: camera.CameraStatusInfo) => {
+    this.cameraManager?.on('cameraStatus', (err: BusinessError, statusInfo: camera.CameraStatusInfo) => {
       if (err && err.message) {
         Logger.error(TAG, 'cameraStatus with errorMessage = ' + err.message);
         return;
@@ -60,13 +64,13 @@ export class CameraManager {
         return;
       }
       // [Start cameraInput]
-      this.cameraInput = this.cameraManager.createCameraInput(device);
-      await this.cameraInput.open();
+      this.cameraInput = this.cameraManager?.createCameraInput(device);
+      await this.cameraInput?.open();
       // [End cameraInput]
       // [Start session]
-      const session = this.cameraManager.createSession(sceneMode);
-      session.beginConfig();
-      session.addInput(this.cameraInput);
+      const session = this.cameraManager?.createSession(sceneMode);
+      session?.beginConfig();
+      session?.addInput(this.cameraInput);
       // [StartExclude session]
       const config: CreateOutputConfig = {
         cameraManager: this.cameraManager,
@@ -79,11 +83,11 @@ export class CameraManager {
       for (const outputManager of this.outputManagers) {
         if (outputManager.isActive) {
           const output = await outputManager.createOutput(config);
-          session.addOutput(output);
+          session?.addOutput(output);
         }
       }
-      await session.commitConfig();
-      await session.start();
+      await session?.commitConfig();
+      await session?.start();
       // [End session]
       this.session = session as (camera.PhotoSession | camera.VideoSession);
       this.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO);
@@ -126,7 +130,11 @@ export class CameraManager {
 
   // [Start getCameraDevice]
   getCameraDevice(cameraPosition: camera.CameraPosition) {
-    const cameraDevices = this.cameraManager.getSupportedCameras();
+    const cameraDevices = this.cameraManager?.getSupportedCameras();
+    if (!cameraDevices) {
+      Logger.error(TAG, `Failed to get camera device. cameraPosition: ${cameraPosition}}`);
+      return;
+    }
     const device = cameraDevices?.find(device => device.cameraPosition === cameraPosition) || cameraDevices[0];
     if (!device) {
       Logger.error(TAG, `Failed to get camera device. cameraPosition: ${cameraPosition}}`);
