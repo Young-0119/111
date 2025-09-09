@@ -15,6 +15,7 @@
 
 import { image } from '@kit.ImageKit';
 import { common } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { AVRecorderState, CameraManager, PhotoManager, VideoManager } from 'camera';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
 import { Logger } from 'commons';
@@ -183,17 +184,14 @@ struct OperateButtonsView {
       .clip(true)
       .onClick(() => {
         if (this.thumbnailUrl) {
-          try {
-            this.context.startAbility({
-              parameters: { uri: this.thumbnailUrl },
-              action: 'ohos.want.action.viewData',
-              bundleName: 'com.huawei.hmos.photos',
-              abilityName: 'com.huawei.hmos.photos.MainAbility'
-            });
-          } catch (exception) {
-            Logger.error(TAG,
-              `thumbnailButton click failed, code is ${exception.code}, message is ${exception.message}`);
-          }
+          this.context.startAbility({
+            parameters: { uri: this.thumbnailUrl },
+            action: 'ohos.want.action.viewData',
+            bundleName: 'com.huawei.hmos.photos',
+            abilityName: 'com.huawei.hmos.photos.MainAbility'
+          }).catch((err: BusinessError) => {
+            Logger.error(TAG, `showToast failed, code is ${err.code}, message is ${err.message}`);
+          });
         }
       })
   }
