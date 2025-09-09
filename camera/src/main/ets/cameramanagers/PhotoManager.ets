@@ -62,11 +62,11 @@ export class PhotoManager implements OutputManager {
 
   // [Start create_photo_output]
   // Create photo output
-  public createPhotoOutput(cameraManager: camera.CameraManager, cameraDevice: camera.CameraDevice,
+  public createPhotoOutput(cameraManager: camera.CameraManager|undefined, cameraDevice: camera.CameraDevice,
     profile: camera.Profile) {
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
     const cameraOutputCapability =
-      cameraManager.getSupportedOutputCapability(cameraDevice, camera.SceneMode.NORMAL_PHOTO);
+      cameraManager?.getSupportedOutputCapability(cameraDevice, camera.SceneMode.NORMAL_PHOTO);
     let photoProfilesArray: camera.Profile[] | undefined = cameraOutputCapability?.photoProfiles;
     if (photoProfilesArray?.length) {
       try {
@@ -83,7 +83,7 @@ export class PhotoManager implements OutputManager {
           Logger.error(TAG_LOG, 'Failed to get photo profile');
           return;
         }
-        cameraPhotoOutput = cameraManager.createPhotoOutput(PhotoProfile);
+        cameraPhotoOutput = cameraManager?.createPhotoOutput(PhotoProfile);
       } catch (error) {
         Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(error)}`);
       }
@@ -181,18 +181,23 @@ export class PhotoManager implements OutputManager {
       let options: photoAccessHelper.CreateOptions = {
         title: 'testPhoto'
       }
-      let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
-        photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
-      assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
-      assetChangeRequest.saveCameraPhoto();
-      let accessHelper: photoAccessHelper.PhotoAccessHelper =
-        photoAccessHelper.getPhotoAccessHelper(context);
-      await accessHelper.applyChanges(assetChangeRequest);
-      let imageSource = image.createImageSource(buffer);
-      let pixelmap = imageSource.createPixelMapSync();
-      this.callback(pixelmap, assetChangeRequest.getAsset().uri);
-      accessHelper.release();
-      imageObj.release();
+      try {
+        let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
+          photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
+        assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
+        assetChangeRequest.saveCameraPhoto();
+        let accessHelper: photoAccessHelper.PhotoAccessHelper =
+          photoAccessHelper.getPhotoAccessHelper(context);
+        await accessHelper.applyChanges(assetChangeRequest);
+        let imageSource = image.createImageSource(buffer);
+        let pixelmap = imageSource.createPixelMapSync();
+        this.callback(pixelmap, assetChangeRequest.getAsset().uri);
+        accessHelper.release();
+        imageObj.release();
+      } catch (exception) {
+        Logger.error(TAG_LOG,
+          `mediaLibSavePhotoSingle failed, code is ${exception.code}, message is ${exception.message}`);
+      }
     });
   }
 
@@ -382,10 +387,14 @@ export class PhotoManager implements OutputManager {
 
   private getPhotoDegree() {
     const promise: Promise<number> = new Promise(resolve => {
-      sensor.once(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
-        let degree = this.calculateDeviceDegree(data.x, data.y, data.z);
-        resolve(degree);
-      });
+      try {
+        sensor.once(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
+          let degree = this.calculateDeviceDegree(data.x, data.y, data.z);
+          resolve(degree);
+        });
+      } catch (exception) {
+        Logger.error(TAG_LOG, `getPhotoDegree failed, code is ${exception.code}, message is ${exception.message}`);
+      }
     })
     return promise;
   }

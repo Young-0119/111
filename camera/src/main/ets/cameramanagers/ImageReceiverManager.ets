@@ -34,10 +34,10 @@ export class ImageReceiverManager implements OutputManager {
   }
 
   async createOutput(config: CreateOutputConfig) {
-    const cameraOutputCap = config.cameraManager.getSupportedOutputCapability(config.device, config.sceneMode);
+    const cameraOutputCap = config.cameraManager?.getSupportedOutputCapability(config.device, config.sceneMode);
     const displayRatio = config.profile.size.width / config.profile.size.height;
     const profileWidth = config.profile.size.width;
-    const previewProfile = cameraOutputCap.previewProfiles
+    const previewProfile = cameraOutputCap?.previewProfiles
       .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
       .find(pf => {
         const pfDisplayRatio = pf.size.width / pf.size.height;
@@ -50,7 +50,7 @@ export class ImageReceiverManager implements OutputManager {
     }
     const surfaceId = await this.init(config.profile.size);
     try {
-      this.output = config.cameraManager.createPreviewOutput(previewProfile, surfaceId);
+      this.output = config.cameraManager?.createPreviewOutput(previewProfile, surfaceId);
     } catch (exception) {
       Logger.error(TAG, `createPreviewOutput failed, code is ${exception.code}, message is ${exception.message}`);
     }
@@ -122,7 +122,13 @@ export class ImageReceiverManager implements OutputManager {
             const stride = imgComponent.rowStride;
             Logger.info(TAG, `getComponent with width:${width} height:${height} stride:${stride}`);
             const pixelMap = await this.getPixelMap(imgComponent, width, height, stride);
-            const displayRotation = display.getDefaultDisplaySync().rotation * camera.ImageRotation.ROTATION_90;
+            let displayDefault: display.Display | null = null;
+            try {
+              displayDefault = display.getDefaultDisplaySync();
+            } catch (exception) {
+              Logger.error(TAG, `getDefaultDisplaySync failed, code is ${exception.code}, message is ${exception.message}`);
+            }
+            const displayRotation = (displayDefault?.rotation ?? 0) * camera.ImageRotation.ROTATION_90;
             const rotation = this.output!.getPreviewRotation(displayRotation);
             if (this.position === camera.CameraPosition.CAMERA_POSITION_FRONT) {
               if (displayRotation === 90 || displayRotation === 270) {

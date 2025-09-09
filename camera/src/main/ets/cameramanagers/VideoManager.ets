@@ -196,7 +196,7 @@ export class VideoManager implements OutputManager {
   }
 
   // [Start create_video_output]
-  async createVideoOutput(cameraManager: camera.CameraManager) {
+  async createVideoOutput(cameraManager: camera.CameraManager|undefined) {
     if (!this.avRecorder || this.avRecorder.state !== AVRecorderState.PREPARED) {
       return;
     }
@@ -204,18 +204,18 @@ export class VideoManager implements OutputManager {
       // [Start get_surface_id]
       let videoSurfaceId = await this.avRecorder.getInputSurface();
       // [End get_surface_id]
-      this.output = cameraManager.createVideoOutput(this.videoProfile, videoSurfaceId);
+      this.output = cameraManager?.createVideoOutput(this.videoProfile, videoSurfaceId);
     } catch (error) {
       Logger.error(TAG_LOG,
         `Failed to create the output instance. error code: ${error.code}`);
     }
   }
 
-  setVideoProfile(cameraManager: camera.CameraManager, targetProfile: camera.Profile,
+  setVideoProfile(cameraManager: camera.CameraManager|undefined, targetProfile: camera.Profile,
     device: camera.CameraDevice) {
     this.cameraPosition = device.cameraPosition;
     let cameraOutputCap: camera.CameraOutputCapability | undefined =
-      cameraManager.getSupportedOutputCapability(device,
+      cameraManager?.getSupportedOutputCapability(device,
         camera.SceneMode.NORMAL_VIDEO);
     let videoProfilesArray: camera.VideoProfile[] | undefined = cameraOutputCap?.videoProfiles;
     if (videoProfilesArray?.length) {

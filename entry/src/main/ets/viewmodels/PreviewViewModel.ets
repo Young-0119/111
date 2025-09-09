@@ -17,11 +17,14 @@ import { curves, display } from '@kit.ArkUI';
 import { camera } from '@kit.CameraKit';
 import WindowUtil from '../utils/WindowUtil';
 import CameraConstant from '../constants/Constants';
+import { Logger } from 'commons';
 
 export enum CameraMode {
   PHOTO,
   VIDEO
 }
+
+const TAG = 'PreviewViewModel';
 
 /**
  * States and methods related to preview.
@@ -38,7 +41,7 @@ class PreviewViewModel {
   rates?: number[] = [];
   currentRate: number = 0;
   blurRadius: number = 0;
-  blurRotation: RotateOptions = { y: 0.5, angle: 0};
+  blurRotation: RotateOptions = { y: 0.5, angle: 0 };
 
   constructor(uiContext: UIContext) {
     this.uiContext = uiContext;
@@ -50,6 +53,7 @@ class PreviewViewModel {
       ? camera.CameraPosition.CAMERA_POSITION_FRONT
       : camera.CameraPosition.CAMERA_POSITION_BACK;
   }
+
   // [End isFront]
 
   getPreviewRatio() {
@@ -67,7 +71,13 @@ class PreviewViewModel {
   // [Start getProfile]
   getProfile: (cameraOrientation: number) => camera.Profile = cameraOrientation => {
     const displaySize: Size = WindowUtil.getMaxDisplaySize(this.getPreviewRatio());
-    const displayRotation = display.getDefaultDisplaySync().rotation * 90;
+    let displayDefault: display.Display | null = null;
+    try {
+      displayDefault = display.getDefaultDisplaySync();
+    } catch (exception) {
+      Logger.error(TAG, `getDefaultDisplaySync failed, code is ${exception.code}, message is ${exception.message}`);
+    }
+    const displayRotation = (displayDefault?.rotation ?? 0) * 90;
     const isRevert = (cameraOrientation + displayRotation) % 180 !== 0;
     return {
       format: camera.CameraFormat.CAMERA_FORMAT_YUV_420_SP,
@@ -77,6 +87,7 @@ class PreviewViewModel {
       }
     };
   }
+
   // [End getProfile]
 
   // [Start setPreviewSize]
@@ -88,6 +99,7 @@ class PreviewViewModel {
       surfaceHeight: displaySize.height
     });
   }
+
   // [End setPreviewSize]
 
   getPreviewTop() {
