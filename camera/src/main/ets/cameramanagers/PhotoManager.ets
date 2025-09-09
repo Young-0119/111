@@ -61,6 +61,7 @@ export class PhotoManager implements OutputManager {
   }
 
   // [Start create_photo_output]
+  // Create photo output
   public createPhotoOutput(cameraManager: camera.CameraManager, cameraDevice: camera.CameraDevice,
     profile: camera.Profile) {
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
@@ -94,6 +95,7 @@ export class PhotoManager implements OutputManager {
   // [End create_photo_output]
 
   // [Start set_photo_cb_double]
+  // Save camera photo
   async mediaLibSavePhoto(photoAsset: photoAccessHelper.PhotoAsset,
     phAccessHelper: photoAccessHelper.PhotoAccessHelper): Promise<void> {
     try {
@@ -128,7 +130,11 @@ export class PhotoManager implements OutputManager {
       deliveryMode: photoAccessHelper.DeliveryMode.FAST_MODE,
     }
     const handler = new MediaDataHandler();
-    await photoAccessHelper.MediaAssetManager.requestImageData(context, photoAsset, requestOptions, handler);
+    try {
+      await photoAccessHelper.MediaAssetManager.requestImageData(context, photoAsset, requestOptions, handler);
+    } catch (exception) {
+      Logger.error(TAG_LOG, `requestImageData failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
 
   public setPhotoOutputCbDouble(cameraPhotoOutput: camera.PhotoOutput) {
@@ -144,6 +150,7 @@ export class PhotoManager implements OutputManager {
   // [End set_photo_cb_double]
 
   // [Start set_photo_cb_single]
+  // Set photo callback single
   setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
     photoOutput.on('photoAvailable', (errCode: BusinessError, photo: camera.Photo): void => {
       if (errCode || photo === undefined) {
@@ -153,9 +160,11 @@ export class PhotoManager implements OutputManager {
       this.mediaLibSavePhotoSingle(context, photo.main)
     });
   }
+
   // [End set_photo_cb_single]
 
   // [Start save_photo_single]
+  // Save photo single
   mediaLibSavePhotoSingle(context: Context, imageObj: image.Image) {
     imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, component: image.Component) => {
       if (errCode || component === undefined) {
@@ -186,6 +195,7 @@ export class PhotoManager implements OutputManager {
       imageObj.release();
     });
   }
+
   // [End save_photo_single]
 
   setPhotoOutputCallback(isSingle: boolean) {
@@ -210,6 +220,7 @@ export class PhotoManager implements OutputManager {
   }
 
   // [Start set_color_space]
+  // Set color space
   setColorSpaceBeforeCommitConfig(session: camera.PhotoSession, isHdr: boolean): void {
     let colorSpace: colorSpaceManager.ColorSpace =
       isHdr ? colorSpaceManager.ColorSpace.DISPLAY_P3 : colorSpaceManager.ColorSpace.SRGB;
@@ -223,8 +234,12 @@ export class PhotoManager implements OutputManager {
       Logger.info(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
       return;
     }
-    Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
-    session.setColorSpace(colorSpace);
+    try {
+      Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
+      session.setColorSpace(colorSpace);
+    } catch (exception) {
+      Logger.error(TAG_LOG, `setColorSpace failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     try {
       let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
       Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
@@ -232,12 +247,17 @@ export class PhotoManager implements OutputManager {
       Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${error.message}`);
     }
   }
+
   // [End set_color_space]
 
   public checkFlash(photoSession: camera.PhotoSession) {
     let flashModeStatus: boolean = false;
-    if (photoSession.hasFlash()) {
-      flashModeStatus = photoSession.isFlashModeSupported(camera.FlashMode.FLASH_MODE_AUTO);
+    try {
+      if (photoSession.hasFlash()) {
+        flashModeStatus = photoSession.isFlashModeSupported(camera.FlashMode.FLASH_MODE_AUTO);
+      }
+    } catch (exception) {
+      Logger.error(TAG_LOG, `checkFlash failed, code is ${exception.code}, message is ${exception.message}`);
     }
     return flashModeStatus;
   }
@@ -285,7 +305,11 @@ export class PhotoManager implements OutputManager {
         Logger.error(TAG_LOG, `Failed to get the zoom ratio range. error: ${JSON.stringify(error)}`);
       }
     }
-    photoSession.setZoomRatio(zoomRatio || photoZoomRatio);
+    try {
+      photoSession.setZoomRatio(zoomRatio || photoZoomRatio);
+    } catch (exception) {
+      Logger.error(TAG_LOG, `setZoomRatio failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
 
   getSupportedColorSpaces(session: camera.PhotoSession): Array<colorSpaceManager.ColorSpace> {
@@ -293,12 +317,13 @@ export class PhotoManager implements OutputManager {
     try {
       colorSpaces = session.getSupportedColorSpaces();
     } catch (error) {
-      Logger.error(TAG_LOG,`The getSupportedColorSpaces call failed. error code: ${error.code}`);
+      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${error.code}`);
     }
     return colorSpaces;
   }
 
   // [Start get_photo_rotation]
+  // Get photo rotation
   getPhotoRotation(photoOutput: camera.PhotoOutput, deviceDegree: number): camera.ImageRotation {
     let photoRotation: camera.ImageRotation = camera.ImageRotation.ROTATION_0;
     try {
@@ -312,6 +337,7 @@ export class PhotoManager implements OutputManager {
   // [End get_photo_rotation]
 
   // [Start capture_photo]
+  // Capture photo
   public async capture(isFront: boolean) {
     const degree = await this.getPhotoDegree();
     const rotation = this.getPhotoRotation(this.output!, degree);
@@ -328,6 +354,7 @@ export class PhotoManager implements OutputManager {
       Logger.info(TAG_LOG, 'Callback invoked to indicate the photo capture request success.');
     });
   }
+
   // [End capture_photo]
 
   private calculateDeviceDegree(x: number, y: number, z: number): number {
@@ -336,14 +363,19 @@ export class PhotoManager implements OutputManager {
     if ((x * x + y * y) * 3 < z * z) {
       return deviceDegree;
     } else {
-      // Calculate the inverse tangent value
-      let sd: Decimal = Decimal.atan2(y, -x)
-      // Convert radian values to angle values;
-      let sc: Decimal = Decimal.round(Number(sd) / Math.PI * 180);
-      // Adjust angle to be relative to vertical orientation
-      deviceDegree = 90 - Number(sc);
-      // Normalize angle to 0-360 degrees range
-      deviceDegree = deviceDegree >= 0 ? deviceDegree % 360 : deviceDegree % 360 + 360;
+      try {
+        // Calculate the inverse tangent value
+        let sd: Decimal = Decimal.atan2(y, -x)
+        // Convert radian values to angle values;
+        let sc: Decimal = Decimal.round(Number(sd) / Math.PI * 180);
+        // Adjust angle to be relative to vertical orientation
+        deviceDegree = 90 - Number(sc);
+        // Normalize angle to 0-360 degrees range
+        deviceDegree = deviceDegree >= 0 ? deviceDegree % 360 : deviceDegree % 360 + 360;
+      } catch (exception) {
+        Logger.error(TAG_LOG,
+          `calculateDeviceDegree failed, code is ${exception.code}, message is ${exception.message}`);
+      }
     }
     return deviceDegree;
   }
@@ -359,6 +391,7 @@ export class PhotoManager implements OutputManager {
   }
 
   // [Start is_moving_photo]
+  // Check whether support moving photo or not
   public isMovingPhotoSupported(photoOutput: camera.PhotoOutput): boolean {
     let isSupported: boolean = false;
     try {
@@ -372,6 +405,7 @@ export class PhotoManager implements OutputManager {
   // [End is_moving_photo]
 
   // [Start enable_moving_photo]
+  // Enable moving photo
   public enableMovingPhoto(enabled: boolean): void {
     try {
       this.output?.enableMovingPhoto(enabled);
@@ -383,8 +417,13 @@ export class PhotoManager implements OutputManager {
   // [End enable_moving_photo]
 
   // [Start photo_release]
+  // Release photo
   async release() {
-    await this.output?.release();
+    try {
+      await this.output?.release();
+    } catch (exception) {
+      Logger.error(TAG_LOG, `release failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     if (this.isSingle) {
       this.output?.off('photoAvailable');
     } else {
@@ -392,5 +431,6 @@ export class PhotoManager implements OutputManager {
     }
     this.output = undefined;
   }
+
   // [End photo_release]
 }

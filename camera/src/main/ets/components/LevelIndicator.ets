@@ -15,8 +15,10 @@
 
 import { curves, display } from '@kit.ArkUI';
 import { sensor } from '@kit.SensorServiceKit';
+import { Logger } from 'commons';
 
 const ANGLE_DIFFERENCE: number = 3;
+const TAG = 'LevelIndicator'
 
 // [Start LevelIndicator]
 @Component
@@ -24,7 +26,13 @@ export struct LevelIndicator {
   @Prop acc: sensor.AccelerometerResponse;
 
   getRotate() {
-    const rotation = display.getDefaultDisplaySync().rotation * 90;
+    let displayDefault: display.Display | null = null;
+    try {
+      displayDefault = display.getDefaultDisplaySync();
+    } catch (exception) {
+      Logger.error(TAG, `getDefaultDisplaySync failed, code is ${exception.code}, message is ${exception.message}`);
+    }
+    const rotation = (displayDefault?.rotation ?? 0) * 90;
     if (rotation === 90 || rotation === 270) {
       return -Math.atan2(-this.acc.y, this.acc.x) * (180 / Math.PI);
     }
@@ -42,7 +50,7 @@ export struct LevelIndicator {
         width: 200,
         height: 1
       })
-        // [StartExclude LevelIndicator]
+      // [StartExclude LevelIndicator]
         .stroke(Color.White)
         .endPoint([200, 0])
         // [EndExclude LevelIndicator]
@@ -55,7 +63,7 @@ export struct LevelIndicator {
           playMode: PlayMode.Normal
         })
       Circle()
-        // [StartExclude LevelIndicator]
+      // [StartExclude LevelIndicator]
         .width(48)
         .height(48)
         .stroke(Color.White)
@@ -70,4 +78,5 @@ export struct LevelIndicator {
     .hitTestBehavior(HitTestMode.Transparent)
   }
 }
+
 // [End LevelIndicator]
