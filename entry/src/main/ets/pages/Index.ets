@@ -17,6 +17,7 @@ import { sensor } from '@kit.SensorServiceKit';
 import { common } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
 import { curves } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import {
   CameraManager,
   GridLine,
@@ -190,11 +191,9 @@ struct Index {
   // [End registerApplicationStateChange]
 
   exitApp() {
-    try {
-      this.applicationContext.killAllProcesses();
-    } catch (exception) {
-      Logger.error(TAG, `exitApp failed, code is ${exception.code}, message is ${exception.message}`);
-    }
+    this.applicationContext.killAllProcesses().catch((err: BusinessError) => {
+      Logger.error('showToast', `showToast failed, code is ${err.code}, message is ${err.message}`);
+    });
   }
 
   onPreviewStart() {

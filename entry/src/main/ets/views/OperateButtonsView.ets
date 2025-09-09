@@ -17,6 +17,9 @@ import { image } from '@kit.ImageKit';
 import { common } from '@kit.AbilityKit';
 import { AVRecorderState, CameraManager, PhotoManager, VideoManager } from 'camera';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
+import { Logger } from 'commons';
+
+const TAG = 'OperateButtonsView';
 
 @Component
 struct OperateButtonsView {
@@ -27,7 +30,7 @@ struct OperateButtonsView {
   @Require photoManager: PhotoManager;
   @Prop @Require photoDelayTime: number;
   @Link photoRemainder: number;
-  private photoDelayTimer:number = 0;
+  private photoDelayTimer: number = 0;
   @State thumbnail: image.PixelMap | string = '';
   @State thumbnailUrl: string = '';
   @Require syncButtonSettings: () => void;
@@ -67,15 +70,15 @@ struct OperateButtonsView {
       if (this.photoDelayTime) {
         this.isDelayTakePhoto = true;
         this.photoRemainder = this.photoDelayTime;
-        this.photoDelayTimer = setInterval(()=>{
+        this.photoDelayTimer = setInterval(() => {
           this.photoRemainder--;
-          if(this.photoRemainder === 0){
+          if (this.photoRemainder === 0) {
             this.photoManager.capture(this.previewVM.isFront);
             this.captureClickFlag++;
             this.isDelayTakePhoto = false;
             clearTimeout(this.photoDelayTimer);
           }
-        },1000)
+        }, 1000)
       } else {
         this.photoManager.capture(this.previewVM.isFront);
         this.captureClickFlag++;
@@ -178,14 +181,19 @@ struct OperateButtonsView {
       .borderWidth(this.thumbnail ? 1 : 0)
       .borderColor(Color.White)
       .clip(true)
-      .onClick(()=>{
-        if(this.thumbnailUrl){
-          this.context.startAbility({
-            parameters: { uri: this.thumbnailUrl },
-            action: 'ohos.want.action.viewData',
-            bundleName: 'com.huawei.hmos.photos',
-            abilityName: 'com.huawei.hmos.photos.MainAbility'
-          });
+      .onClick(() => {
+        if (this.thumbnailUrl) {
+          try {
+            this.context.startAbility({
+              parameters: { uri: this.thumbnailUrl },
+              action: 'ohos.want.action.viewData',
+              bundleName: 'com.huawei.hmos.photos',
+              abilityName: 'com.huawei.hmos.photos.MainAbility'
+            });
+          } catch (exception) {
+            Logger.error(TAG,
+              `thumbnailButton click failed, code is ${exception.code}, message is ${exception.message}`);
+          }
         }
       })
   }
@@ -229,6 +237,7 @@ struct OperateButtonsView {
         // [EndExclude toggleCameraPositionButton]
       })
   }
+
   // [End toggleCameraPositionButton]
 
   build() {

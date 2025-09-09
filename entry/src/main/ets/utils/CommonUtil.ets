@@ -16,6 +16,7 @@
 import { Point } from '@kit.TestKit';
 import { camera } from '@kit.CameraKit';
 import { display } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { Logger } from 'commons';
 
 export function limitNumberInRange(src: number, range: number[]) {
@@ -86,16 +87,14 @@ export function showToast(
   alignment = Alignment.Top,
   offset: Offset = { dx: 0, dy: 300 }
 ) {
-  try {
-    UIContext.getPromptAction().openToast({
-      message,
-      duration,
-      alignment,
-      offset
-    });
-  } catch (exception) {
-    Logger.error('showToast', `showToast failed, code is ${exception.code}, message is ${exception.message}`);
-  }
+  UIContext.getPromptAction().openToast({
+    message,
+    duration,
+    alignment,
+    offset
+  }).catch((err: BusinessError) => {
+    Logger.error('showToast', `showToast failed, code is ${err.code}, message is ${err.message}`);
+  });
 }
 
 // [Start calCameraPoint]
