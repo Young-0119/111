@@ -120,6 +120,7 @@ export class VideoManager implements OutputManager {
       Logger.info(TAG_LOG, `Failed to start and catch error is  ${error.message}`);
     }
   }
+
   // [End start_video]
 
   // [Start stop_video]
@@ -138,6 +139,7 @@ export class VideoManager implements OutputManager {
       Logger.info(TAG_LOG, `Failed to stop and catch error is  ${error.message}`);
     }
   }
+
   // [End stop_video]
 
   // [Start pause_video]
@@ -151,6 +153,7 @@ export class VideoManager implements OutputManager {
       Logger.info(TAG_LOG, `Failed to pause and catch error is  ${error.message}`);
     }
   }
+
   // [End pause_video]
 
   // [Start resume_video]
@@ -164,18 +167,24 @@ export class VideoManager implements OutputManager {
       Logger.info(TAG_LOG, `Failed to resume and catch error is  ${error.message}`);
     }
   }
+
   // [End resume_video]
 
   // [Start release_video]
   async release() {
-    await this.avRecorder?.release();
-    await this.output?.release();
-    this.file && await fileIo.close(this.file.fd);
+    try {
+      await this.avRecorder?.release();
+      await this.output?.release();
+      this.file && await fileIo.close(this.file.fd);
+    } catch (exception) {
+      Logger.error(TAG_LOG, `release failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     this.avRecorder?.off('stateChange');
     this.avRecorder = undefined;
     this.output = undefined;
     this.file = undefined;
   }
+
   // [End release_video]
 
   getCurrentOutput() {
@@ -230,6 +239,7 @@ export class VideoManager implements OutputManager {
       }
     }
   }
+
   // [End create_video_output]
 
   getCameraImageRotation(): camera.ImageRotation {
@@ -244,8 +254,12 @@ export class VideoManager implements OutputManager {
       title: Date.now().toString()
     };
     let accessHelper: photoAccessHelper.PhotoAccessHelper = photoAccessHelper.getPhotoAccessHelper(this.context);
-    this.videoUri = await accessHelper.createAsset(photoAccessHelper.PhotoType.VIDEO, 'mp4', options);
-    this.file = fileIo.openSync(this.videoUri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE);
+    try {
+      this.videoUri = await accessHelper.createAsset(photoAccessHelper.PhotoType.VIDEO, 'mp4', options);
+      this.file = fileIo.openSync(this.videoUri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE);
+    } catch (exception) {
+      Logger.error(TAG_LOG, `createAsset failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     // [End create_file]
 
     // [Start av_profile]
@@ -269,7 +283,7 @@ export class VideoManager implements OutputManager {
       audioSourceType: media.AudioSourceType.AUDIO_SOURCE_TYPE_CAMCORDER,
       videoSourceType: media.VideoSourceType.VIDEO_SOURCE_TYPE_SURFACE_YUV,
       profile: this.avProfile,
-      url: `fd://${this.file.fd}`,
+      url: `fd://${this.file?.fd}`,
       metadata: {
         videoOrientation: this.getCameraImageRotation().toString()
       }
@@ -286,14 +300,18 @@ export class VideoManager implements OutputManager {
     if ((x * x + y * y) * 3 < z * z) {
       return getDeviceDegree;
     } else {
-      // Calculate the inverse tangent value
-      let sd: Decimal = Decimal.atan2(y, -x);
-      // Convert radian values to angle values;
-      let sc: Decimal = Decimal.round(Number(sd) / 3.141592653589 * 180)
-      // Adjust angle to be relative to vertical orientation
-      getDeviceDegree = 90 - Number(sc);
-      // Normalize angle to 0-360 degrees range
-      getDeviceDegree = getDeviceDegree >= 0 ? getDeviceDegree % 360 : getDeviceDegree % 360 + 360;
+      try {
+        // Calculate the inverse tangent value
+        let sd: Decimal = Decimal.atan2(y, -x);
+        // Convert radian values to angle values;
+        let sc: Decimal = Decimal.round(Number(sd) / 3.141592653589 * 180)
+        // Adjust angle to be relative to vertical orientation
+        getDeviceDegree = 90 - Number(sc);
+        // Normalize angle to 0-360 degrees range
+        getDeviceDegree = getDeviceDegree >= 0 ? getDeviceDegree % 360 : getDeviceDegree % 360 + 360;
+      } catch (exception) {
+        Logger.error(TAG_LOG, `getRealData failed, code is ${exception.code}, message is ${exception.message}`);
+      }
     }
     return getDeviceDegree;
   }
@@ -333,13 +351,14 @@ export class VideoManager implements OutputManager {
   getVideoRotation(deviceDegree: number): camera.ImageRotation {
     let videoRotation: camera.ImageRotation = this.getCameraImageRotation();
     try {
-        videoRotation = this.output!.getVideoRotation(deviceDegree);
-        Logger.info(TAG_LOG, `Video rotation is: ${videoRotation}`);
+      videoRotation = this.output!.getVideoRotation(deviceDegree);
+      Logger.info(TAG_LOG, `Video rotation is: ${videoRotation}`);
     } catch (error) {
       Logger.info(TAG_LOG, `Failed to getVideoRotation and catch error is: ${error.message}`);
     }
     return videoRotation;
   }
+
   // [End get_video_rotation]
 
   async getVideoThumbnail() {
@@ -373,18 +392,25 @@ export class VideoManager implements OutputManager {
   setVideoStabilizationMode(session: camera.VideoSession): boolean {
     let mode: camera.VideoStabilizationMode = camera.VideoStabilizationMode.AUTO;
     // Check whether video stabilization is supported
-    let isSupported: boolean = session.isVideoStabilizationModeSupported(mode);
-    if (!isSupported) {
-      Logger.info(TAG_LOG, `videoStabilizationMode: ${mode} is not support`);
+    try {
+      let isSupported: boolean = session.isVideoStabilizationModeSupported(mode);
+      if (!isSupported) {
+        Logger.info(TAG_LOG, `videoStabilizationMode: ${mode} is not support`);
+        return false;
+      }
+      Logger.info(TAG_LOG, `setVideoStabilizationMode: ${mode}`);
+      // Set video stabilization
+      session.setVideoStabilizationMode(mode);
+      let activeVideoStabilizationMode = session.getActiveVideoStabilizationMode();
+      Logger.info(TAG_LOG, `activeVideoStabilizationMode: ${activeVideoStabilizationMode}`);
+      return isSupported;
+    } catch (exception) {
+      Logger.error(TAG_LOG,
+        `setVideoStabilizationMode failed, code is ${exception.code}, message is ${exception.message}`);
       return false;
     }
-    Logger.info(TAG_LOG, `setVideoStabilizationMode: ${mode}`);
-    // Set video stabilization
-    session.setVideoStabilizationMode(mode);
-    let activeVideoStabilizationMode = session.getActiveVideoStabilizationMode();
-    Logger.info(TAG_LOG, `activeVideoStabilizationMode: ${activeVideoStabilizationMode}`);
-    return isSupported;
   }
+
   // [End set_video_stabilization]
 
   // [Start set_video_color_space]
@@ -406,8 +432,12 @@ export class VideoManager implements OutputManager {
       Logger.info(TAG_LOG, `colorSpace: ${colorSpace} is not support`);
       return;
     }
-    Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
-    session.setColorSpace(colorSpace);
+    try {
+      Logger.info(TAG_LOG, `setColorSpace: ${colorSpace}`);
+      session.setColorSpace(colorSpace);
+    } catch (exception) {
+      Logger.error(TAG_LOG, `setColorSpace failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     try {
       let activeColorSpace: colorSpaceManager.ColorSpace = session.getActiveColorSpace();
       Logger.info(TAG_LOG, `activeColorSpace: ${activeColorSpace}`);
@@ -415,5 +445,6 @@ export class VideoManager implements OutputManager {
       Logger.error(TAG_LOG, `getActiveColorSpace Faild: ${error.message}`);
     }
   }
+
   // [Start set_video_color_space]
 }

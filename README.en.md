@@ -11,8 +11,8 @@ Based on the Camera Kit, this sample implements a range of core camera functiona
 How to use:
 
 1. After launching the application and completing authorization, the preview UI is displayed.
-2. The buttons from left to right at the top of the screen are as follows: flash setting, delayed shooting mode setting, motion photo mode setting, and single/dual-stage shutter mode setting. (The single-stage shutter mode does not support motion photo shooting.)
-3. When switched to video recording mode, the top buttons from left to right are: flash setting and image stabilization mode setting.
+2. The buttons from left to right at the top of the screen are as follows: preview frame rate setting, flash setting, delayed shooting mode setting, motion photo mode setting, and single/dual-stage shutter mode setting. (The single-stage shutter mode does not support motion photo shooting.)
+3. When switched to video recording mode, the top buttons from left to right are: preview frame rate setting, flash setting and image stabilization mode setting.
 4. On the right side, the buttons are grid line, level, and dual-channel preview in order.
 5. At the bottom, the buttons can be used to take photos, record videos, and switch between the front and rear cameras.
 
@@ -69,7 +69,8 @@ How to use:
 - ohos.permission.MICROPHONE: required to access the microphone for video recording.
 - ohos.permission.MEDIA_LOCATION: required to obtain geographical information.
 - ohos.permission.WRITE_IMAGEVIDEO: required to write media files.
-- hos.permission.READ_IMAGEVIDEO: required to read media files.
+- ohos.permission.READ_IMAGEVIDEO: required to read media files.
+- ohos.permission.APPROXIMATELY_LOCATION: required to obtain approximate location information of the device.
 - ohos.permission.ACCELEROMETER: required for the acceleration sensor.
 
 ### Constraints

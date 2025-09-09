@@ -35,6 +35,7 @@ import ModeButtonsView from '../views/ModeButtonsView';
 import SettingButtonsView from '../views/SettingButtonsView';
 import OperateButtonsView from '../views/OperateButtonsView';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
+import { Logger } from 'commons';
 
 @Extend(SymbolGlyph)
 function funcButtonStyle() {
@@ -45,30 +46,30 @@ function funcButtonStyle() {
   .backgroundColor('#664D4D4D')
 }
 
+const TAG = 'Index'
+
 @Entry
 @Component
 struct Index {
   private context: Context = this.getUIContext().getHostContext()!;
   private applicationContext = this.context.getApplicationContext();
   private windowClass = (this.context as common.UIAbilityContext).windowStage.getMainWindowSync();
-
   @State videoManager: VideoManager = new VideoManager(this.context);
   @State isSinglePhoto: boolean = false;
   @State isLivePhoto: boolean = false;
   private photoManager: PhotoManager = new PhotoManager(this.context, true, this.isSinglePhoto);
-  private previewManager: PreviewManager = new PreviewManager(() => { this.onPreviewStart() });
+  private previewManager: PreviewManager = new PreviewManager(() => {
+    this.onPreviewStart()
+  });
   private imageReceiverManager: ImageReceiverManager = new ImageReceiverManager(px => {
     this.onImageReceiver(px);
   });
   private cameraManager: CameraManager = new CameraManager(this.context, [this.previewManager,
     this.photoManager, this.videoManager, this.imageReceiverManager]);
-
   @State previewVM: PreviewViewModel = new PreviewViewModel(this.getUIContext());
-
   @State isGridLineVisible: boolean = false;
   @State isLevelIndicatorVisible: boolean = false;
   @State isPreviewImageVisible: boolean = false;
-
   @State isFocusBoxVisible: boolean = false;
   @State focusBoxPosition: Edges = { top: 0, left: 0 };
   private focusBoxSize: Size = { width: 80, height: 80 };
@@ -76,27 +77,23 @@ struct Index {
     this.isFocusBoxVisible = false;
   }, 3 * 1000);
   private exposureFontSize: number = 24;
-
   @State isSleeping: boolean = false;
   private sleepTimer?: RefreshableTimer;
-
   private zoomRange: number[] = [];
   @State zooms: number[] = [1, 5, 10];
   @State currentZoom: number = 1;
   @State isZoomPinching: boolean = false;
   private originZoomBeforePinch: number = 1; // record zoom after pinch, sale base it.
   @State isStabilizationEnabled: boolean = false;
-
   @State previewImage: PixelMap | ResourceStr = '';
   private PreviewImageHeight: number = 80;
-
   @State photoDelayTime: number = 0;
   @State photoRemainder: number = 0;
-  @State isDelayTakePhoto:boolean = false;
-
+  @State isDelayTakePhoto: boolean = false;
   @State acc: sensor.AccelerometerResponse = { x: 0, y: 0, z: 0 } as sensor.AccelerometerResponse;
-  private setPreviewSize: () => void = () => { this.previewVM.setPreviewSize(); }
-
+  private setPreviewSize: () => void = () => {
+    this.previewVM.setPreviewSize();
+  }
   @State isShowBlack: boolean = false;
   @StorageLink('captureClick') @Watch('onCaptureClick') captureClickFlag: number = 0;
   @State flashBlackOpacity: number = 1;
@@ -106,7 +103,13 @@ struct Index {
     this.initSleepTimer();
     this.registerApplicationStateChange();
     this.addOrientationChangeEventListener();
-    display.on('foldStatusChange', () => { this.onFoldStatusChange() });
+    try {
+      display.on('foldStatusChange', () => {
+        this.onFoldStatusChange()
+      });
+    } catch (exception) {
+      Logger.error(TAG, `onFoldStatusChange failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
 
   aboutToDisappear(): void {
@@ -115,10 +118,15 @@ struct Index {
 
   // [Start addGravityEventListener]
   addGravityEventListener() {
-    sensor.on(sensor.SensorId.GRAVITY, (data) => {
-      this.acc = data;
-    }, { interval: 100 * 1000 * 1000 }); // 100ms
+    try {
+      sensor.on(sensor.SensorId.GRAVITY, (data) => {
+        this.acc = data;
+      }, { interval: 100 * 1000 * 1000 }); // 100ms
+    } catch (exception) {
+      Logger.error(TAG, `addGravityEventListener failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
+
   // [End addGravityEventListener]
 
   addOrientationChangeEventListener() {
@@ -146,6 +154,7 @@ struct Index {
       this.sleepTimer?.refresh();
     });
   }
+
   // [End initSleepTimer]
 
   async onFoldStatusChange() {
@@ -177,10 +186,15 @@ struct Index {
     const sceneMode = this.previewVM.getSceneMode();
     await this.cameraManager.start(this.previewVM.surfaceId, cameraPosition, sceneMode, this.previewVM.getProfile);
   }
+
   // [End registerApplicationStateChange]
 
   exitApp() {
-    this.applicationContext.killAllProcesses();
+    try {
+      this.applicationContext.killAllProcesses();
+    } catch (exception) {
+      Logger.error(TAG, `exitApp failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
 
   onPreviewStart() {
@@ -204,7 +218,8 @@ struct Index {
       this.previewVM.rates = [minRate, maxRate];
       this.previewVM.currentRate = maxRate;
       this.previewManager.setFrameRate(maxRate, maxRate);
-    };
+    }
+    ;
   }
 
   syncButtonSettings() {
@@ -244,12 +259,14 @@ struct Index {
         type: XComponentType.SURFACE,
         controller: this.previewVM.xComponentController
       })
-        // [StartExclude Stack]
-        // [StartExclude XComponent_gesture]
+      // [StartExclude Stack]
+      // [StartExclude XComponent_gesture]
         .onLoad(async () => {
           // [StartExclude XComponent]
           await PermissionManager.request(CameraConstant.PERMISSIONS, this.context)
-            .catch(() => { this.exitApp() });
+            .catch(() => {
+              this.exitApp()
+            });
           // [EndExclude XComponent]
           this.previewVM.surfaceId = this.previewVM.xComponentController.getXComponentSurfaceId();
           this.previewVM.setPreviewSize();
@@ -270,7 +287,9 @@ struct Index {
               this.sleepTimer?.refresh();
             })
             .onActionUpdate((event: GestureEvent) => {
-              if (this.previewVM.isVideoMode() && this.isStabilizationEnabled) return;
+              if (this.previewVM.isVideoMode() && this.isStabilizationEnabled) {
+                return;
+              }
               const targetZoom = this.originZoomBeforePinch * event.scale;
               this.currentZoom = limitNumberInRange(targetZoom, this.zoomRange);
               this.cameraManager.setZoomRatio(this.currentZoom);
@@ -319,7 +338,7 @@ struct Index {
           .position(this.getExposurePosition())
       }
 
-      if(this.isDelayTakePhoto){
+      if (this.isDelayTakePhoto) {
         Text(`${this.photoRemainder}S`)
           .fontSize(44)
           .fontWeight(FontWeight.Regular)
@@ -329,7 +348,7 @@ struct Index {
 
       if (this.isShowBlack) {
         Column()
-          .key('black')
+          .id('black')
           .width('100%')
           .height('100%')
           .backgroundColor(Color.Black)
@@ -368,6 +387,7 @@ struct Index {
       this.syncButtonSettings();
     })
   }
+
   // [End wakeupMask]
 
   @Builder
@@ -402,13 +422,20 @@ struct Index {
       .funcButtonStyle()
       .onClick(() => {
         this.isPreviewImageVisible = !this.isPreviewImageVisible;
-        const message = this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
+        const message =
+          this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
         showToast(this.getUIContext(), message);
       })
   }
 
   getPreviewImageWidth() {
-    const rotation = display.getDefaultDisplaySync().rotation * 90;
+    let displayDefault: display.Display | null = null;
+    try {
+      displayDefault = display.getDefaultDisplaySync();
+    } catch (exception) {
+      Logger.error(TAG, `getDefaultDisplaySync failed, code is ${exception.code}, message is ${exception.message}`);
+    }
+    const rotation = (displayDefault?.rotation ?? 0) * 90;
     const ratio = this.previewVM.getPreviewRatio();
     const displayRatio = rotation === 90 || rotation === 270 ? 1 / ratio : ratio;
     return this.PreviewImageHeight / displayRatio;
@@ -519,6 +546,7 @@ struct Index {
     .height('100%')
     .width('100%')
     .backgroundColor(Color.Black)
-    .onClick(() => {})
+    .onClick(() => {
+    })
   }
 }

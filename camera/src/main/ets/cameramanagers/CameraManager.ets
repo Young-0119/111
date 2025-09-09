@@ -81,7 +81,7 @@ export class CameraManager {
           const output = await outputManager.createOutput(config);
           session.addOutput(output);
         }
-      };
+      }
       await session.commitConfig();
       await session.start();
       // [End session]
@@ -94,25 +94,34 @@ export class CameraManager {
   }
 
   async refreshOutput(oldOutput: camera.CameraOutput, newOutput: camera.CameraOutput) {
-    await this.session?.stop();
-    this.session?.beginConfig();
-    this.session?.removeOutput(oldOutput);
-    this.session?.addOutput(newOutput);
-    await this.session?.commitConfig();
-    await this.session?.start();
+    try {
+      await this.session?.stop();
+      this.session?.beginConfig();
+      this.session?.removeOutput(oldOutput);
+      this.session?.addOutput(newOutput);
+      await this.session?.commitConfig();
+      await this.session?.start();
+    } catch (exception) {
+      Logger.error(TAG, `refreshOutput failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
 
   // [Start release]
   async release() {
-    await this.session?.stop();
-    for (const outputManager of this.outputManagers) {
-      if (outputManager.isActive) {
-        await outputManager.release();
+    try {
+      await this.session?.stop();
+      for (const outputManager of this.outputManagers) {
+        if (outputManager.isActive) {
+          await outputManager.release();
+        }
       }
-    };
-    await this.cameraInput?.close();
-    await this.session?.release();
+      await this.cameraInput?.close();
+      await this.session?.release();
+    } catch (exception) {
+      Logger.error(TAG, `release failed, code is ${exception.code}, message is ${exception.message}`);
+    }
   }
+
   // [End release]
 
   // [Start getCameraDevice]
@@ -124,12 +133,19 @@ export class CameraManager {
     }
     return device;
   }
+
   // [End getCameraDevice]
 
   // [Start getZoomRange]
   getZoomRange() {
-    return this.session!.getZoomRatioRange();
+    try {
+      return this.session!.getZoomRatioRange();
+    } catch (exception) {
+      Logger.error(TAG, `getZoomRange failed, code is ${exception.code}, message is ${exception.message}`);
+      return [];
+    }
   }
+
   // [End getZoomRange]
 
   // [Start setFocusMode]
@@ -141,20 +157,22 @@ export class CameraManager {
         return;
       }
       this.session?.setFocusMode(focusMode);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG, 'setFocusMode error ' + JSON.stringify(e));
     }
   }
+
   // [End setFocusMode]
 
   // [Start setFocusPoint]
   setFocusPoint(point: camera.Point) {
     try {
       this.session?.setFocusPoint(point);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG, 'setFocusPoint error ' + JSON.stringify(e));
     }
   }
+
   // [End setFocusPoint]
 
   // [Start setExposureMode]
@@ -166,26 +184,28 @@ export class CameraManager {
         return;
       }
       this.session?.setExposureMode(exposureMode);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG, 'setExposureMode error ' + JSON.stringify(e));
     }
   }
+
   // [End setExposureMode]
 
   // [Start setMeteringPoint]
   setMeteringPoint(point: camera.Point) {
     try {
       this.session?.setMeteringPoint(point);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG, 'setMeteringPoint error ' + JSON.stringify(e));
     }
   }
+
   // [End setMeteringPoint]
 
   setZoomRatio(zoom: number) {
     try {
       this.session?.setZoomRatio(zoom);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG, 'setZoomRatio error ' + JSON.stringify(e));
     }
   }
@@ -194,10 +214,11 @@ export class CameraManager {
   setSmoothZoom(zoom: number) {
     try {
       this.session?.setSmoothZoom(zoom);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG, 'setSmoothZoom error ' + JSON.stringify(e));
     }
   }
+
   // [End setSmoothZoom]
 
   // [Start setFlashMode]
@@ -209,10 +230,11 @@ export class CameraManager {
         return;
       }
       this.session?.setFlashMode(flashMode);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG, 'setFlashMode error ' + JSON.stringify(e));
     }
   }
+
   // [End setFlashMode]
 
   setVideoStabilizationMode(stabilizationMode: camera.VideoStabilizationMode) {

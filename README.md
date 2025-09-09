@@ -10,8 +10,8 @@
 
 使用说明：
 1. 打开应用，授权后展示预览界面。
-2. 上方从左至右按钮功能依次为：闪光灯设置、延迟拍照模式设置、动态拍照模式设置、单双段拍照模式设置（单段拍照模式不支持动态拍摄）。
-3. 切换录像模式，上方按钮依次为：闪关灯设置、防抖模式设置（模式不支持变焦）。
+2. 上方从左至右按钮功能依次为：预览帧率设置、闪光灯设置、延迟拍照模式设置、动态拍照模式设置、单双段拍照模式设置（单段拍照模式不支持动态拍摄）。
+3. 切换录像模式，上方按钮依次为：预览帧率设置、闪关灯设置、防抖模式设置（模式不支持变焦）。
 4. 右侧按钮依次为：网格线、水平仪、双路预览（获取预览帧数据）。
 5. 下方按钮可拍照，录像，切换前后置摄像头。
 
@@ -68,7 +68,8 @@
 - ohos.permission.MICROPHONE：麦克风权限，用于录像
 - ohos.permission.MEDIA_LOCATION: 用于获取地理信息
 - ohos.permission.WRITE_IMAGEVIDEO：用于写入媒体文件
-- hos.permission.READ_IMAGEVIDEO：用于读取媒体文件
+- ohos.permission.READ_IMAGEVIDEO：用于读取媒体文件
+- ohos.permission.APPROXIMATELY_LOCATION：用于获取设备模糊位置信息
 - ohos.permission.ACCELEROMETER：用于加速度传感器
 
 

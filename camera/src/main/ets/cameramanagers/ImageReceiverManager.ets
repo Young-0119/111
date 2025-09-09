@@ -49,13 +49,21 @@ export class ImageReceiverManager implements OutputManager {
       return;
     }
     const surfaceId = await this.init(config.profile.size);
-    this.output = config.cameraManager.createPreviewOutput(previewProfile, surfaceId);
+    try {
+      this.output = config.cameraManager.createPreviewOutput(previewProfile, surfaceId);
+    } catch (exception) {
+      Logger.error(TAG, `createPreviewOutput failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     this.position = config.device.cameraPosition;
     return this.output;
   }
 
   async release() {
-    await this.output?.release();
+    try {
+      await this.output?.release();
+    } catch (exception) {
+      Logger.error(TAG, `release failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     this.output = undefined;
   }
 
@@ -66,6 +74,7 @@ export class ImageReceiverManager implements OutputManager {
     this.onImageArrival(receiver);
     return surfaceId;
   }
+
   // [End init]
 
   // [Start getPixelMap]
@@ -87,6 +96,7 @@ export class ImageReceiverManager implements OutputManager {
       srcPixelFormat: image.PixelMapFormat.NV21,
     });
   }
+
   // [End getPixelMap]
 
   // [Start onImageArrival]
@@ -142,5 +152,6 @@ export class ImageReceiverManager implements OutputManager {
       });
     });
   }
+
   // [End onImageArrival]
 }

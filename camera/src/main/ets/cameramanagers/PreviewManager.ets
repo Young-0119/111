@@ -24,7 +24,8 @@ const TAG_LOG = 'PreviewManager'
 export class PreviewManager implements OutputManager {
   output?: camera.PreviewOutput;
   isActive: boolean = true;
-  onPreviewStart: () => void = () => {};
+  onPreviewStart: () => void = () => {
+  };
 
   constructor(onPreviewStart: () => void) {
     this.onPreviewStart = onPreviewStart;
@@ -46,10 +47,15 @@ export class PreviewManager implements OutputManager {
       Logger.error(TAG_LOG, 'Failed to get preview profile');
       return;
     }
-    this.output = config.cameraManager.createPreviewOutput(previewProfile, config.surfaceId);
-    this.addOutputListener(this.output);
+    try {
+      this.output = config.cameraManager.createPreviewOutput(previewProfile, config.surfaceId);
+      this.addOutputListener(this.output);
+    } catch (exception) {
+      Logger.error(TAG_LOG, `createPreviewOutput failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     return this.output;
   }
+
   // [End createOutput]
 
   addOutputListener(output: camera.PreviewOutput) {
@@ -78,28 +84,36 @@ export class PreviewManager implements OutputManager {
       Logger.info(TAG_LOG, 'Preview frame end');
     });
   }
+
   // [End onFrame]
 
   // [Start release]
   async release() {
-    await this.output?.release();
+    try {
+      await this.output?.release();
+    } catch (exception) {
+      Logger.error(TAG_LOG, `release failed, code is ${exception.code}, message is ${exception.message}`);
+    }
     this.output = undefined;
   }
+
   // [End release]
 
   // [Start getSupportedFrameRates]
   getSupportedFrameRates() {
     return this.output?.getSupportedFrameRates();
   }
+
   // [End getSupportedFrameRates]
 
   // [Start setFrameRate]
   setFrameRate(minFps: number, maxFps: number) {
     try {
       this.output?.setFrameRate(minFps, maxFps);
-    } catch(e) {
+    } catch (e) {
       Logger.error(TAG_LOG, 'setFrameRate error ' + JSON.stringify(e));
     }
   }
+
   // [End setFrameRate]
 }

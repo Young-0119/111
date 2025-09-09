@@ -16,11 +16,18 @@
 import { Point } from '@kit.TestKit';
 import { camera } from '@kit.CameraKit';
 import { display } from '@kit.ArkUI';
+import { Logger } from 'commons';
 
 export function limitNumberInRange(src: number, range: number[]) {
-  if (range.length < 2) return src;
-  if (src < range[0]) return range[0];
-  if (src > range[1]) return range[1];
+  if (range.length < 2) {
+    return src;
+  }
+  if (src < range[0]) {
+    return range[0];
+  }
+  if (src > range[1]) {
+    return range[1];
+  }
   return src;
 }
 
@@ -41,7 +48,7 @@ export function findRangeIndex(target: number, arr: number[]) {
 // Math floor float by digit
 // eg: toFixed(9.97, 1) -> 9.9
 export function toFixed(num: number, digit: number): string {
-  const scale = 10 ** digit;
+  const scale = 10**digit;
   return (Math.floor(num * scale) / scale).toFixed(digit);
 }
 
@@ -69,6 +76,7 @@ export function getClampedChildPosition(childSize: Size, parentSize: Size, point
   }
   return { left, top };
 }
+
 // [End getClampedChildPosition]
 
 export function showToast(
@@ -78,17 +86,27 @@ export function showToast(
   alignment = Alignment.Top,
   offset: Offset = { dx: 0, dy: 300 }
 ) {
-  UIContext.getPromptAction().openToast({
-    message,
-    duration,
-    alignment,
-    offset
-  });
+  try {
+    UIContext.getPromptAction().openToast({
+      message,
+      duration,
+      alignment,
+      offset
+    });
+  } catch (exception) {
+    Logger.error('showToast', `showToast failed, code is ${exception.code}, message is ${exception.message}`);
+  }
 }
 
 // [Start calCameraPoint]
 export function calCameraPoint(eventX: number, eventY: number, width: number, height: number): camera.Point {
-  const displayRotation = display.getDefaultDisplaySync().rotation * 90;
+  let displayDefault: display.Display | null = null;
+  try {
+    displayDefault = display.getDefaultDisplaySync();
+  } catch (exception) {
+    Logger.error('calCameraPoint', `calCameraPoint failed, code is ${exception.code}, message is ${exception.message}`);
+  }
+  const displayRotation = (displayDefault?.rotation ?? 0) * 90;
   if (displayRotation === 0) {
     return { x: eventY / height, y: 1 - eventX / width };
   }
@@ -100,4 +118,5 @@ export function calCameraPoint(eventX: number, eventY: number, width: number, he
   }
   return { x: eventX / width, y: eventY / height };
 }
+
 // [End calCameraPoint]
