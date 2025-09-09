@@ -82,7 +82,6 @@ export class CameraManager {
           session.addOutput(output);
         }
       }
-      ;
       await session.commitConfig();
       await session.start();
       // [End session]
