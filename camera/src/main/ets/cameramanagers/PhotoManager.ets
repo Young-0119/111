@@ -72,18 +72,18 @@ export class PhotoManager implements OutputManager {
       try {
         const displayRatio = profile.size.width / profile.size.height;
         const profileWidth = profile.size.width;
-        const PhotoProfile = photoProfilesArray
+        const photoProfile = photoProfilesArray
           .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
           .find(pf => {
             const pfDisplayRatio = pf.size.width / pf.size.height;
             return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
               pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
           });
-        if (!PhotoProfile) {
+        if (!photoProfile) {
           Logger.error(TAG_LOG, 'Failed to get photo profile');
           return;
         }
-        cameraPhotoOutput = cameraManager?.createPhotoOutput(PhotoProfile);
+        cameraPhotoOutput = cameraManager?.createPhotoOutput(photoProfile);
       } catch (error) {
         Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(error)}`);
       }
@@ -227,6 +227,7 @@ export class PhotoManager implements OutputManager {
   // [Start set_color_space]
   // Set color space
   setColorSpaceBeforeCommitConfig(session: camera.PhotoSession, isHdr: boolean): void {
+    // The isHdr flag indicates whether HDR mode is enabled, with true representing the use of the DISPLAY_P3 color space.
     let colorSpace: colorSpaceManager.ColorSpace =
       isHdr ? colorSpaceManager.ColorSpace.DISPLAY_P3 : colorSpaceManager.ColorSpace.SRGB;
     let colorSpaces: Array<colorSpaceManager.ColorSpace> = [];

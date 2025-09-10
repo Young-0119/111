@@ -253,9 +253,9 @@ export class VideoManager implements OutputManager {
     let options: photoAccessHelper.CreateOptions = {
       title: Date.now().toString()
     };
-    let accessHelper: photoAccessHelper.PhotoAccessHelper = photoAccessHelper.getPhotoAccessHelper(this.context);
+    let videoAccessHelper: photoAccessHelper.PhotoAccessHelper = photoAccessHelper.getPhotoAccessHelper(this.context);
     try {
-      this.videoUri = await accessHelper.createAsset(photoAccessHelper.PhotoType.VIDEO, 'mp4', options);
+      this.videoUri = await videoAccessHelper.createAsset(photoAccessHelper.PhotoType.VIDEO, 'mp4', options);
       this.file = fileIo.openSync(this.videoUri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE);
     } catch (exception) {
       Logger.error(TAG_LOG, `createAsset failed, code is ${exception.code}, message is ${exception.message}`);
@@ -264,18 +264,19 @@ export class VideoManager implements OutputManager {
 
     // [Start av_profile]
     this.avProfile = {
-      audioBitrate: 48000,
-      audioChannels: 2,
-      audioCodec: media.CodecMimeType.AUDIO_AAC,
-      audioSampleRate: 48000,
-      fileFormat: media.ContainerFormatType.CFT_MPEG_4,
-      videoBitrate: 32000000,
+      audioBitrate: 48000, // Audio bitrate (unit: bps), which affects audio quality
+      audioChannels: 2, // Stereo two-channel recording
+      audioCodec: media.CodecMimeType.AUDIO_AAC, // The audio encoding format is AAC
+      audioSampleRate: 48000, // Audio sampling rate (unit: Hz), CD-quality sound
+      fileFormat: media.ContainerFormatType.CFT_MPEG_4, // Container Format Configuration
+      videoBitrate: 32000000, // Video bitrate (unit: bps) determines video clarity
+      // Dynamic Selection of Video Encoding Format
       videoCodec: (this.qualityLevel === QualityLevel.HIGHER && this.cameraPosition === 0) ?
-      media.CodecMimeType.VIDEO_HEVC : media.CodecMimeType.VIDEO_AVC,
-      videoFrameWidth: this.videoProfile?.size.width,
-      videoFrameHeight: this.videoProfile?.size.height,
-      videoFrameRate: this.cameraPosition === 0 ? 60 : 30,
-    }
+        media.CodecMimeType.VIDEO_HEVC : media.CodecMimeType.VIDEO_AVC,
+      videoFrameWidth: this.videoProfile?.size.width, // Obtain width from video configuration
+      videoFrameHeight: this.videoProfile?.size.height, // Obtain height from video configuration
+      videoFrameRate: this.cameraPosition === 0 ? 60 : 30, // Obtain rate from video configuration
+    };
     // [End av_profile]
 
     // [Start av_config]
