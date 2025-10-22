@@ -35,6 +35,7 @@ import ZoomButtonsView from '../views/ZoomButtonsView';
 import ModeButtonsView from '../views/ModeButtonsView';
 import SettingButtonsView from '../views/SettingButtonsView';
 import OperateButtonsView from '../views/OperateButtonsView';
+import { WatermarkOverlay, WatermarkInfo } from '../views/WatermarkOverlay';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
 import { Logger } from 'commons';
 
@@ -98,6 +99,17 @@ struct Index {
   @State isShowBlack: boolean = false;
   @StorageLink('captureClick') @Watch('onCaptureClick') captureClickFlag: number = 0;
   @State flashBlackOpacity: number = 1;
+  @State watermarkInfo: WatermarkInfo = {
+    timestamp: '',
+    weather: '',
+    location: '',
+    altitude: '',
+    direction: '',
+    longitude: '',
+    latitude: '',
+    organization: ''
+  };
+  @State isWatermarkVisible: boolean = true;
 
   async aboutToAppear() {
     this.addGravityEventListener();
@@ -352,6 +364,13 @@ struct Index {
           .height('100%')
           .backgroundColor(Color.Black)
           .opacity(this.flashBlackOpacity)
+      }
+
+      // 水印组件
+      if (this.isWatermarkVisible) {
+        WatermarkOverlay({
+          watermarkInfo: this.watermarkInfo
+        })
       }
     }
     // [End Stack]

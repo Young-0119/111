@@ -3,6 +3,58 @@
     {
       "name": "app_name",
       "value": "CustomCamera"
+    },
+    {
+      "name": "watermark_title",
+      "value": "灭火救援灾害现场"
+    },
+    {
+      "name": "watermark_timestamp",
+      "value": "拍摄时间"
+    },
+    {
+      "name": "watermark_weather",
+      "value": "天       气"
+    },
+    {
+      "name": "watermark_location",
+      "value": "地       点"
+    },
+    {
+      "name": "watermark_altitude",
+      "value": "海       拔"
+    },
+    {
+      "name": "watermark_direction",
+      "value": "方       向"
+    },
+    {
+      "name": "watermark_longitude",
+      "value": "经       度"
+    },
+    {
+      "name": "watermark_latitude",
+      "value": "纬       度"
+    },
+    {
+      "name": "watermark_organization",
+      "value": "制作单位"
+    },
+    {
+      "name": "watermark_edit_title",
+      "value": "编辑制作单位"
+    },
+    {
+      "name": "watermark_edit_placeholder",
+      "value": "请输入制作单位"
+    },
+    {
+      "name": "cancel",
+      "value": "取消"
+    },
+    {
+      "name": "confirm",
+      "value": "确定"
     }
   ]
 }
