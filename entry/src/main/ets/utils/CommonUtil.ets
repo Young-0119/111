@@ -81,20 +81,23 @@ export function getClampedChildPosition(childSize: Size, parentSize: Size, point
 // [End getClampedChildPosition]
 
 export function showToast(
-  UIContext: UIContext,
+  uiContext: UIContext,
   message: ResourceStr = '',
   duration = 2000,
   alignment = Alignment.Top,
   offset: Offset = { dx: 0, dy: 300 }
 ) {
-  UIContext.getPromptAction().openToast({
-    message,
-    duration,
-    alignment,
-    offset
-  }).catch((err: BusinessError) => {
+  const promptAction = uiContext.getPromptAction();
+  try {
+    promptAction.showToast({
+      message,
+      duration,
+      alignment,
+      offset
+    });
+  } catch (err) {
     Logger.error('showToast', `showToast failed, code is ${err.code}, message is ${err.message}`);
-  });
+  }
 }
 
 // [Start calCameraPoint]
