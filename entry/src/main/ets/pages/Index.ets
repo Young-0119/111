@@ -57,7 +57,7 @@ struct Index {
   private applicationContext = this.context.getApplicationContext();
   private windowClass = (this.context as common.UIAbilityContext).windowStage.getMainWindowSync();
   @State videoManager: VideoManager = new VideoManager(this.context);
-  @State isSinglePhoto: boolean = false;
+  @State isSinglePhoto: boolean = true;
   @State isLivePhoto: boolean = false;
   private photoManager: PhotoManager = new PhotoManager(this.context, true, this.isSinglePhoto);
   private previewManager: PreviewManager = new PreviewManager(() => {
@@ -116,6 +116,10 @@ struct Index {
     this.initSleepTimer();
     this.registerApplicationStateChange();
     this.addOrientationChangeEventListener();
+    
+    // 初始化水印状态
+    this.isWatermarkVisible = this.previewVM.isWatermarkEnabledStatus();
+    
     try {
       display.on('foldStatusChange', () => {
         this.onFoldStatusChange()
@@ -237,6 +241,15 @@ struct Index {
     this.previewManager.setFrameRate(this.previewVM.currentRate, this.previewVM.currentRate);
     this.photoManager.enableMovingPhoto(this.isLivePhoto);
     this.photoManager.setPhotoOutputCallback(this.isSinglePhoto);
+    // 同步水印信息到PhotoManager
+    if (this.previewVM.isWatermarkEnabledStatus()) {
+      const watermarkInfo = this.previewVM.getWatermarkInfoForProcessing();
+      this.photoManager.setWatermarkInfo(watermarkInfo);
+      Logger.info(TAG, `Watermark info synced to PhotoManager: ${JSON.stringify(watermarkInfo)}`);
+    } else {
+      this.photoManager.setWatermarkInfo(null);
+      Logger.info(TAG, 'Watermark disabled, cleared PhotoManager watermark info');
+    }
   }
 
   flashBlackAnim() {
@@ -446,6 +459,24 @@ struct Index {
       })
   }
 
+  @Builder
+  watermarkButton() {
+    Text(this.isWatermarkVisible ? 'W' : 'w')
+      .fontSize(18)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(this.isWatermarkVisible ? Color.White : Color.Gray)
+      .borderRadius('50%')
+      .padding(12)
+      .backgroundColor(this.isWatermarkVisible ? '#664D4D4D' : '#33222222')
+      .onClick(() => {
+        this.isWatermarkVisible = !this.isWatermarkVisible;
+        this.previewVM.setWatermarkEnabled(this.isWatermarkVisible);
+        this.syncButtonSettings(); // 同步水印设置到PhotoManager
+        const message = this.isWatermarkVisible ? $r('app.string.watermark_open') : $r('app.string.watermark_close');
+        showToast(this.getUIContext(), message);
+      })
+  }
+
   getPreviewImageWidth() {
     let displayDefault: display.Display | null = null;
     try {
@@ -496,6 +527,7 @@ struct Index {
       this.gridLineButton()
       this.levelButton()
       this.previewImageButton()
+      this.watermarkButton()
     }
     .alignRules({
       top: { anchor: 'settingButtonsView', align: VerticalAlign.Bottom },

@@ -24,6 +24,7 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
+import { ImageWatermarkUtil, WatermarkInfo } from 'commons/src/main/ets/utils/ImageWatermarkUtil';
 
 const TAG_LOG = 'PhotoManager';
 
@@ -33,6 +34,8 @@ export class PhotoManager implements OutputManager {
   context: Context;
   isSingle: boolean = false;
   location: geoLocationManager.Location | null = null;
+  private watermarkInfo: WatermarkInfo | null = null;
+  private isWatermarkEnabled: boolean = false;
   private callback: (pixelMap: image.PixelMap, url: string) => void = () => {
   };
 
@@ -48,6 +51,14 @@ export class PhotoManager implements OutputManager {
 
   setCallback(callback: (pixelMap: image.PixelMap, url: string) => void) {
     this.callback = callback;
+  }
+
+  setWatermarkInfo(watermarkInfo: WatermarkInfo | null) {
+    this.watermarkInfo = watermarkInfo;
+  }
+
+  setWatermarkEnabled(enabled: boolean) {
+    this.isWatermarkEnabled = enabled;
   }
 
   async createOutput(config: CreateOutputConfig) {
@@ -111,17 +122,23 @@ export class PhotoManager implements OutputManager {
 
   async mediaLibRequestBuffer(photoAsset: photoAccessHelper.PhotoAsset, context: Context,
     callback: (pixelMap: image.PixelMap, url: string) => void) {
+    Logger.info(TAG_LOG, 'mediaLibRequestBuffer called (without watermark)');
+    
     class MediaDataHandler implements photoAccessHelper.MediaAssetDataHandler<ArrayBuffer> {
       onDataPrepared(data: ArrayBuffer) {
+        Logger.info(TAG_LOG, 'onDataPrepared called in MediaDataHandler (without watermark)');
         if (data === undefined) {
-          Logger.error(TAG_LOG, 'Error occurred when preparing data');
+          Logger.error(TAG_LOG, 'Error occurred when preparing data - data is undefined (without watermark)');
           return;
         }
+        Logger.info(TAG_LOG, `Data size: ${data.byteLength} bytes (without watermark)`);
+        
         let imageSource = image.createImageSource(data);
         imageSource.createPixelMap().then((pixelMap: image.PixelMap) => {
+          Logger.info(TAG_LOG, 'PixelMap created successfully, calling callback (without watermark)');
           callback(pixelMap, photoAsset.uri);
         }).catch((err: BusinessError) => {
-          Logger.error(TAG_LOG, `createPixelMap err:${err.code}`);
+          Logger.error(TAG_LOG, `createPixelMap err:${err.code}, message: ${err.message}`);
         })
       }
     }
@@ -131,19 +148,90 @@ export class PhotoManager implements OutputManager {
     }
     const handler = new MediaDataHandler();
     try {
+      Logger.info(TAG_LOG, 'Calling MediaAssetManager.requestImageData (without watermark)');
       await photoAccessHelper.MediaAssetManager.requestImageData(context, photoAsset, requestOptions, handler);
+      Logger.info(TAG_LOG, 'MediaAssetManager.requestImageData called successfully (without watermark)');
     } catch (exception) {
       Logger.error(TAG_LOG, `requestImageData failed, code is ${exception.code}, message is ${exception.message}`);
     }
   }
 
+  async mediaLibRequestBufferWithWatermark(photoAsset: photoAccessHelper.PhotoAsset, context: Context,
+    callback: (pixelMap: image.PixelMap, url: string) => void) {
+    Logger.info(TAG_LOG, 'mediaLibRequestBufferWithWatermark called');
+    
+    class MediaDataHandler implements photoAccessHelper.MediaAssetDataHandler<ArrayBuffer> {
+      async onDataPrepared(data: ArrayBuffer) {
+        Logger.info(TAG_LOG, 'onDataPrepared called in MediaDataHandler');
+        if (data === undefined) {
+          Logger.error(TAG_LOG, 'Error occurred when preparing data - data is undefined');
+          return;
+        }
+        
+        Logger.info(TAG_LOG, `Original data size: ${data.byteLength} bytes`);
+        let processedData = data;
+        
+        // 如果启用了水印且有水印信息，处理水印
+        if (photoManager.isWatermarkEnabled && photoManager.watermarkInfo) {
+          try {
+            Logger.info(TAG_LOG, 'Adding watermark to photo in double callback mode...');
+            Logger.info(TAG_LOG, `Watermark info: ${JSON.stringify(photoManager.watermarkInfo)}`);
+            processedData = await ImageWatermarkUtil.addWatermarkToPhoto(data, photoManager.watermarkInfo);
+            Logger.info(TAG_LOG, `Processed data size: ${processedData.byteLength} bytes`);
+            Logger.info(TAG_LOG, 'Watermark added successfully in double callback mode');
+          } catch (error) {
+            Logger.error(TAG_LOG, `Failed to add watermark in double callback mode: ${JSON.stringify(error)}`);
+            // 如果水印处理失败，继续使用原始图片数据
+            processedData = data;
+          }
+        } else {
+          Logger.info(TAG_LOG, 'Watermark not applied in double callback mode');
+        }
+        
+        Logger.info(TAG_LOG, 'Creating PixelMap from processed data');
+        let imageSource = image.createImageSource(processedData);
+        imageSource.createPixelMap().then((pixelMap: image.PixelMap) => {
+          Logger.info(TAG_LOG, 'PixelMap created successfully, calling callback');
+          callback(pixelMap, photoAsset.uri);
+        }).catch((err: BusinessError) => {
+          Logger.error(TAG_LOG, `createPixelMap err:${err.code}, message: ${err.message}`);
+        })
+      }
+    }
+
+    let requestOptions: photoAccessHelper.RequestOptions = {
+      deliveryMode: photoAccessHelper.DeliveryMode.FAST_MODE,
+    }
+    const photoManager = this; // 保存this引用
+    const handler = new MediaDataHandler();
+    try {
+      Logger.info(TAG_LOG, 'Calling MediaAssetManager.requestImageData with watermark');
+      await photoAccessHelper.MediaAssetManager.requestImageData(context, photoAsset, requestOptions, handler);
+      Logger.info(TAG_LOG, 'MediaAssetManager.requestImageData called successfully');
+    } catch (exception) {
+      Logger.error(TAG_LOG, `requestImageData with watermark failed, code is ${exception.code}, message is ${exception.message}`);
+    }
+  }
+
   public setPhotoOutputCbDouble(cameraPhotoOutput: camera.PhotoOutput) {
+    Logger.info(TAG_LOG, 'Setting up photoAssetAvailable callback for double photo mode');
     cameraPhotoOutput.on('photoAssetAvailable',
       async (_err: BusinessError, photoAsset: photoAccessHelper.PhotoAsset): Promise<void> => {
+        Logger.info(TAG_LOG, 'photoAssetAvailable callback triggered');
+        Logger.info(TAG_LOG, `Current watermark state in double mode - Enabled: ${this.isWatermarkEnabled}, Info: ${JSON.stringify(this.watermarkInfo)}`);
+        
         let accessHelper: photoAccessHelper.PhotoAccessHelper =
           photoAccessHelper.getPhotoAccessHelper(this.context);
         this.mediaLibSavePhoto(photoAsset, accessHelper);
-        this.mediaLibRequestBuffer(photoAsset, this.context, this.callback);
+        
+        // 修改这里：如果启用了水印，使用新的带水印处理的buffer回调
+        if (this.isWatermarkEnabled && this.watermarkInfo) {
+          Logger.info(TAG_LOG, 'Requesting buffer with watermark for double photo mode');
+          this.mediaLibRequestBufferWithWatermark(photoAsset, this.context, this.callback);
+        } else {
+          Logger.info(TAG_LOG, 'Requesting buffer without watermark for double photo mode');
+          this.mediaLibRequestBuffer(photoAsset, this.context, this.callback);
+        }
       });
   }
 
@@ -152,11 +240,14 @@ export class PhotoManager implements OutputManager {
   // [Start set_photo_cb_single]
   // Set photo callback single
   setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
+    Logger.info(TAG_LOG, 'Setting up photoAvailable callback for single photo mode');
     photoOutput.on('photoAvailable', (errCode: BusinessError, photo: camera.Photo): void => {
+      Logger.info(TAG_LOG, 'photoAvailable callback triggered');
       if (errCode || photo === undefined) {
-        Logger.error(TAG_LOG, 'getPhoto failed');
+        Logger.error(TAG_LOG, `getPhoto failed, errCode: ${errCode}, photo: ${photo}`);
         return;
       }
+      Logger.info(TAG_LOG, 'Photo object received, calling mediaLibSavePhotoSingle');
       this.mediaLibSavePhotoSingle(context, photo.main)
     });
   }
@@ -166,37 +257,66 @@ export class PhotoManager implements OutputManager {
   // [Start save_photo_single]
   // Save photo single
   mediaLibSavePhotoSingle(context: Context, imageObj: image.Image) {
+    Logger.info(TAG_LOG, 'mediaLibSavePhotoSingle called');
+    Logger.info(TAG_LOG, `Current watermark state - Enabled: ${this.isWatermarkEnabled}, Info: ${JSON.stringify(this.watermarkInfo)}`);
+    
     imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, component: image.Component) => {
       if (errCode || component === undefined) {
-        Logger.error(TAG_LOG, 'getComponent failed');
+        Logger.error(TAG_LOG, `getComponent failed, errCode: ${errCode}, component: ${component}`);
         return;
       }
-      const buffer: ArrayBuffer = component.byteBuffer;
-      if (!buffer) {
-        Logger.error(TAG_LOG, 'byteBuffer is null');
-        return;
-      }
-      let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
-      let extension: string = 'jpg';
-      let options: photoAccessHelper.CreateOptions = {
-        title: 'testPhoto'
-      }
+      
       try {
-        let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
-          photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
-        assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
-        assetChangeRequest.saveCameraPhoto();
-        let accessHelper: photoAccessHelper.PhotoAccessHelper =
-          photoAccessHelper.getPhotoAccessHelper(context);
-        await accessHelper.applyChanges(assetChangeRequest);
-        let imageSource = image.createImageSource(buffer);
-        let pixelmap = imageSource.createPixelMapSync();
-        this.callback(pixelmap, assetChangeRequest.getAsset().uri);
-        accessHelper.release();
-        imageObj.release();
-      } catch (exception) {
-        Logger.error(TAG_LOG,
-          `mediaLibSavePhotoSingle failed, code is ${exception.code}, message is ${exception.message}`);
+        let buffer: ArrayBuffer = component.byteBuffer;
+        if (!buffer) {
+          Logger.error(TAG_LOG, 'byteBuffer is null');
+          return;
+        }
+        
+        Logger.info(TAG_LOG, `Buffer received, size: ${buffer.byteLength} bytes`);
+        
+        // 如果启用了水印且有水印信息，处理水印
+        Logger.info(TAG_LOG, `Checking watermark conditions - isWatermarkEnabled: ${this.isWatermarkEnabled}, watermarkInfo: ${!!this.watermarkInfo}`);
+        if (this.isWatermarkEnabled && this.watermarkInfo) {
+          try {
+            Logger.info(TAG_LOG, `Adding watermark to photo... Enabled: ${this.isWatermarkEnabled}, Info: ${JSON.stringify(this.watermarkInfo)}`);
+            Logger.info(TAG_LOG, `Original buffer size: ${buffer.byteLength} bytes`);
+            buffer = await ImageWatermarkUtil.addWatermarkToPhoto(buffer, this.watermarkInfo);
+            Logger.info(TAG_LOG, `Processed buffer size: ${buffer.byteLength} bytes`);
+            Logger.info(TAG_LOG, 'Watermark added successfully');
+          } catch (error) {
+            Logger.error(TAG_LOG, `Failed to add watermark: ${JSON.stringify(error)}`);
+            // 如果水印处理失败，继续使用原始图片
+          }
+        } else {
+          Logger.info(TAG_LOG, `Watermark not applied. Enabled: ${this.isWatermarkEnabled}, Info: ${JSON.stringify(this.watermarkInfo)}`);
+        }
+        
+        let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
+        let extension: string = 'jpg';
+        let options: photoAccessHelper.CreateOptions = {
+          title: 'testPhoto'
+        }
+        try {
+          let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
+            photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
+          assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
+          assetChangeRequest.saveCameraPhoto();
+          let accessHelper: photoAccessHelper.PhotoAccessHelper =
+            photoAccessHelper.getPhotoAccessHelper(context);
+          await accessHelper.applyChanges(assetChangeRequest);
+          let imageSource = image.createImageSource(buffer);
+          let pixelmap = imageSource.createPixelMapSync();
+          this.callback(pixelmap, assetChangeRequest.getAsset().uri);
+          accessHelper.release();
+          imageObj.release();
+          Logger.info(TAG_LOG, 'Photo saved successfully with watermark');
+        } catch (exception) {
+          Logger.error(TAG_LOG,
+            `mediaLibSavePhotoSingle failed, code is ${exception.code}, message is ${exception.message}`);
+        }
+      } catch (innerError) {
+        Logger.error(TAG_LOG, `Error in getComponent callback: ${JSON.stringify(innerError)}`);
       }
     });
   }
@@ -204,13 +324,17 @@ export class PhotoManager implements OutputManager {
   // [End save_photo_single]
 
   setPhotoOutputCallback(isSingle: boolean) {
+    Logger.info(TAG_LOG, `setPhotoOutputCallback called with isSingle: ${isSingle}`);
     if (!this.output) {
+      Logger.error(TAG_LOG, 'Cannot set photo output callback - output is null');
       return;
     }
     if (isSingle) {
+      Logger.info(TAG_LOG, 'Setting up single photo mode callbacks');
       this.output?.off('photoAssetAvailable');
       this.setPhotoOutputCbSingle(this.output, this.context);
     } else {
+      Logger.info(TAG_LOG, 'Setting up double photo mode callbacks');
       this.output?.off('photoAvailable');
       this.setPhotoOutputCbDouble(this.output);
     }

@@ -1,549 +1,497 @@
-# 照片叠加水印功能开发指南
+# 自定义相机水印功能开发文档
 
-## 概述
-本文档介绍如何在当前相机项目中实现照片叠加水印功能。项目中已固定水印UI为 `WatermarkOverlay.ets` 中的设计，包括应急消防主题的水印内容和旋转90度的特殊布局。
+## 技术概述
 
-## 当前工程结构分析
+本方案基于OffscreenCanvas离屏画布技术，实现相机拍照图片的水印添加功能。通过离屏绘制方式，将水印文本或图像与原始图片融合，生成带水印的最终图片文件。
 
-### 水印相关组件
+### 核心原理
+- **OffscreenCanvas**：提供离屏画布功能，无需将绘制过程渲染到屏幕
+- **OffscreenCanvasRenderingContext2D**：在离屏画布上进行绘制操作
+- **PixelMap**：图片像素数据载体，用于图片处理流程
+
+## 技术架构
+
+### 关键技术点
+1. **图片解析**：将原始图片解析为PixelMap数据格式
+2. **离屏绘制**：在OffscreenCanvas上依次绘制原图和水印
+3. **像素融合**：通过Canvas 2D API实现图片与水印的像素级融合
+4. **文件保存**：将处理后的PixelMap数据写入文件系统
+
+### 与Camera Kit集成
+本方案与现有Camera Kit相机服务深度集成，在拍照流程中无缝嵌入水印处理环节。
+
+## 开发流程
+
+### 1. 图片数据获取与解析
+```typescript
+// 从资源或相机获取图片数据
+async getImagePixelMap(resource: Resource): Promise<ImagePixelMap> {
+  const data: Uint8Array = await this.getUIContext().getHostContext()?.resourceManager.getMediaContent(resource.id) as Uint8Array;
+  const arrayBuffer: ArrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+  const imageSource: image.ImageSource = image.createImageSource(arrayBuffer);
+  return await imageSource2PixelMap(imageSource);
+}
 ```
-entry/src/main/ets/views/WatermarkOverlay.ets          # 水印覆盖层组件（UI已固定）
-entry/src/main/ets/pages/Index.ets                     # 主页面（已集成水印）
-entry/src/main/ets/viewmodels/PreviewViewModel.ets     # 预览视图模型
+
+### 2. 创建PixelMap对象
+```typescript
+// 获取图片信息并创建PixelMap
+export async function imageSource2PixelMap(imageSource: image.ImageSource): Promise<ImagePixelMap> {
+  const imageInfo: image.ImageInfo = await imageSource.getImageInfo();
+  const height = imageInfo.size.height;
+  const width = imageInfo.size.width;
+  const options: image.DecodingOptions = {
+    editable: true,
+    desiredSize: { height, width }
+  };
+  const pixelMap: PixelMap = await imageSource.createPixelMap(options);
+  const result: ImagePixelMap = { pixelMap, width, height };
+  return result;
+}
 ```
 
-### 相机管理模块
+### 3. 离屏水印添加
+```typescript
+// 核心水印添加函数
+export function addWatermark(
+  imagePixelMap: ImagePixelMap,
+  text: string = 'watermark',
+  drawWatermark?: (OffscreenContext: OffscreenCanvasRenderingContext2D) => void
+): image.PixelMap {
+  // 创建与图片同尺寸的离屏画布
+  const height = uiContext?.px2vp(imagePixelMap.height) as number;
+  const width = uiContext?.px2vp(imagePixelMap.width) as number;
+  const offScreenCanvas = new OffscreenCanvas(width, height);
+  const offScreenContext = offScreenCanvas.getContext('2d');
+  
+  // 绘制原图
+  offScreenContext.drawImage(imagePixelMap.pixelMap, 0, 0, width, height);
+  
+  // 添加水印（支持自定义或默认文本）
+  if (drawWatermark) {
+    drawWatermark(offScreenContext);
+  } else {
+    const displayWidth = display.getDefaultDisplaySync().width;
+    const vpWidth = uiContext?.px2vp(displayWidth) ?? displayWidth;
+    const imageScale = width / vpWidth;
+    
+    // 设置水印样式
+    offScreenContext.textAlign = 'right';
+    offScreenContext.fillStyle = '#A2FFFFFF'; // 半透明白色
+    offScreenContext.font = 12 * imageScale + 'vp';
+    
+    const padding = 5 * imageScale;
+    offScreenContext.fillText(text, width - padding, height - padding);
+  }
+  
+  // 获取处理后的PixelMap
+  return offScreenContext.getPixelMap(0, 0, width, height);
+}
 ```
-camera/src/main/ets/cameramanagers/
-├── PhotoManager.ets          # 照片管理器
-├── ImageReceiverManager.ets    # 图像接收管理器
-├── CameraManager.ets           # 相机管理器
-└── PreviewManager.ets          # 预览管理器
+
+### 4. 文件保存
+```typescript
+// 将PixelMap保存为图片文件
+export async function saveToFile(pixelMap: image.PixelMap, context: Context): Promise<void> {
+  try {
+    const phAccessHelper = photoAccessHelper.getPhotoAccessHelper(context);
+    const filePath = await phAccessHelper.createAsset(photoAccessHelper.PhotoType.IMAGE, 'png');
+    
+    const imagePacker = image.createImagePacker();
+    const imageBuffer = await imagePacker.packToData(pixelMap, {
+      format: 'image/png',
+      quality: 100
+    });
+    
+    const mode = fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE;
+    const fd = (await fileIo.open(filePath, mode)).fd;
+    await fileIo.truncate(fd);
+    await fileIo.write(fd, imageBuffer);
+  } catch (err) {
+    hilog.error(0x0000, TAG, 'saveToFile error：', JSON.stringify(err) ?? '');
+  } finally {
+    if (fd) {
+      fileIo.close(fd);
+    }
+  }
+}
 ```
 
-### 工具模块
+## 集成方案
+
+### 现有项目集成点
+
+#### 1. UI层集成 (entry/src/main/ets/views/)
+- **WatermarkOverlay.ets**：已实现的水印覆盖层组件
+  - 支持8项信息展示：时间、天气、位置、海拔、方位角、经纬度、制作单位
+  - 实时时间更新机制（每秒更新）
+  - 双击编辑制作单位功能
+  - 数据持久化（Preferences存储）
+  - 特殊视觉效果：旋转90度、缩放80%、半透明背景
+
+#### 2. 相机模块集成 (camera/src/main/ets/)
+- **PhotoManager.ets**：需要集成水印处理逻辑
+  - 在拍照流程中调用addWatermarkToPhoto方法
+  - 获取当前WatermarkInfo数据
+  - 协调原始图片和水印合成
+
+#### 3. 状态管理层 (entry/src/main/ets/viewModels/)
+- **PreviewViewModel.ets**：需要添加水印状态管理
+  - 管理WatermarkInfo数据状态
+  - 提供获取当前水印信息的方法
+  - 协调UI显示和图片处理的数据同步
+
+#### 4. 工具类扩展 (commons/src/main/ets/utils/)
+- **ImageWatermarkUtil.ets**：新增图片水印处理工具类
+  - 实现addWatermarkToPhoto核心方法
+  - 处理坐标转换和样式匹配
+  - 提供各种水印元素的绘制方法
+
+### 数据流设计
 ```
-entry/src/main/ets/utils/
-├── CommonUtil.ets             # 通用工具
-├── PermissionManager.ets        # 权限管理
-└── WindowUtil.ets              # 窗口工具
+WatermarkOverlay预览 → 用户编辑确认 → PreviewViewModel状态管理 → 
+PhotoManager拍照 → ImageWatermarkUtil离屏处理 → 生成带水印图片 → 文件保存
 ```
 
-## 固定水印UI结构分析
+### 具体数据流程
 
-### 1. 水印信息结构（已固定）
+#### 1. 预览数据流
+```
+WatermarkInfo默认值 → WatermarkOverlay显示 → 用户双击编辑 → 
+Preferences存储 → 实时更新显示
+```
 
-项目中定义的 `WatermarkInfo` 接口包含8个固定字段：
+#### 2. 拍照数据流
+```
+相机原始图像 → PhotoManager获取水印信息 → ImageWatermarkUtil处理 → 
+OffscreenCanvas绘制水印 → 生成新PixelMap → 保存文件
+```
 
+#### 3. 状态同步机制
+```typescript
+// PreviewViewModel协调数据
+class PreviewViewModel {
+  watermarkInfo: WatermarkInfo;
+  
+  // UI层获取数据用于显示
+  getWatermarkInfoForDisplay(): WatermarkInfo {
+    return this.watermarkInfo;
+  }
+  
+  // 拍照时获取数据用于处理
+  getWatermarkInfoForProcessing(): WatermarkInfo {
+    return {
+      ...this.watermarkInfo,
+      timestamp: this.getCurrentTimestamp() // 确保时间准确
+    };
+  }
+}
+```
+
+## 性能优化
+
+### 1. 异步处理
+- 水印处理采用异步方式，避免阻塞UI线程
+- 使用Promise链式处理，确保流程顺畅
+
+### 2. 内存管理
+- 及时释放中间PixelMap对象
+- 合理控制OffscreenCanvas生命周期
+
+### 3. 缓存策略
+- 相同尺寸图片可复用OffscreenCanvas
+- 字体样式等可缓存避免重复设置
+
+## 实际实现方案
+
+### 水印界面组件 (WatermarkOverlay.ets)
+
+基于现有项目实现的水印覆盖层组件，具有以下特性：
+
+#### 1. 水印信息结构
 ```typescript
 export interface WatermarkInfo {
-  timestamp: string;      // 拍摄时间（实时更新）
-  weather?: string;      // 天气信息（默认：晴朗）
-  location?: string;      // 位置信息（默认：北京市朝阳区）
-  altitude?: string;     // 海拔高度（默认：50米）
-  direction?: string;    // 方向信息（默认：北偏东30度）
-  longitude?: string;    // 经度（默认：116.4074°）
-  latitude?: string;     // 纬度（默认：39.9042°）
-  organization?: string; // 制作单位（支持编辑，可持久化保存）
+  timestamp: string;      // 拍摄时间
+  weather?: string;       // 天气信息
+  location?: string;      // 位置信息
+  altitude?: string;      // 海拔信息
+  direction?: string;     // 方位角信息
+  longitude?: string;     // 经度信息
+  latitude?: string;      // 纬度信息
+  organization?: string;  // 制作单位
 }
 ```
 
-### 2. 固定UI布局特征
+#### 2. 界面布局设计
+- **左上角定位**：使用Row容器实现左上角对齐
+- **半透明背景**：白色背景，透明度70% (rgba(255, 255, 255, 0.7))
+- **阴影效果**：半径6，黑色透明度30%，向下偏移3像素
+- **缩放和旋转**：以左下角为中心缩放到80%，顺时针旋转90度
+- **圆角边框**：8像素圆角，4像素内边距
 
-根据 `WatermarkOverlay.ets` 的实现，水印UI具有以下固定特征：
+#### 3. 视觉层次结构
+1. **标题区域**：蓝色半透明背景，包含Logo和标题
+2. **信息区域**：黑色文字显示各项数据
+3. **制作单位**：特殊样式，蓝色半透明背景，支持双击编辑
 
-- **主题风格**：应急消防主题，蓝色调设计
-- **旋转布局**：整个水印区域旋转90度，以左下角为轴心
-- **缩放比例**：整体缩放到80%大小
-- **背景样式**：白色背景，70%透明度，带阴影效果
-- **位置固定**：左上角对齐，通过transform实现特殊旋转效果
-- **Logo显示**：包含应急消防logo（60x46.48px）
+#### 4. 交互功能
+- **实时时间更新**：每秒自动更新时间戳
+- **双击编辑制作单位**：弹出模态对话框进行编辑
+- **数据持久化**：使用Preferences保存制作单位信息
+- **默认值处理**：各项信息支持默认值和加载状态
 
-### 3. 固定内容结构
-
-水印内容分为8行固定格式：
-1. **标题行**：应急消防logo + 标题文字
-2. **拍摄时间**：实时更新的时间戳
-3. **天气信息**：天气状况
-4. **位置信息**：地理位置
-5. **海拔信息**：海拔高度
-6. **方位信息**：方向角度
-7. **经度信息**：经度坐标
-8. **纬度信息**：纬度坐标
-9. **制作单位**：可编辑的单位名称（双击编辑）
-
-### 4. 交互功能（已固定）
-
-- **时间更新**：每秒自动更新时间戳
-- **单位编辑**：双击制作单位行弹出编辑对话框
-- **数据持久化**：制作单位信息通过preferences保存
-- **对话框样式**：居中显示的模态对话框
-
-## 照片叠加水印实现方案
-
-### 1. 核心思路
-
-由于水印UI已完全固定，实现照片叠加需要：
-1. 在 `PhotoManager.ets` 中创建与UI完全一致的水印绘制逻辑
-2. 保持相同的旋转角度（90度）、缩放比例（80%）和透明度
-3. 使用相同的颜色方案和字体样式
-4. 确保叠加后的水印与预览时视觉效果一致
-
-### 2. 照片处理流程
-
-当前照片拍摄流程：
-1. `Index.ets` 中的拍照按钮触发拍照
-2. `PhotoManager.ets` 处理照片拍摄
-3. `ImageReceiverManager.ets` 接收图像数据
-4. **新增**：将固定样式的水印叠加到照片上
-5. 保存带水印的最终照片
-
-## 关键实现步骤
-
-### 步骤1：分析固定水印样式参数
-
-根据 `WatermarkOverlay.ets` 提取关键样式参数：
-
+#### 5. 样式细节
 ```typescript
-// 固定样式参数
-const WATERMARK_ROTATION = 90;           // 旋转角度
-const WATERMARK_SCALE = 0.8;             // 缩放比例
-const WATERMARK_OPACITY = 0.7;           // 背景透明度
-const WATERMARK_BACKGROUND = 'rgba(255, 255, 255, 0.7)'; // 背景色
-const WATERMARK_TITLE_BG = 'rgba(0, 87, 217, 0.5)';      // 标题背景色
-const WATERMARK_ORG_BG = 'rgba(0, 87, 217, 0.5)';      // 单位背景色
-const WATERMARK_SHADOW = {
-  radius: 6,
-  color: 'rgba(0, 0, 0, 0.3)',
-  offsetX: 0,
-  offsetY: 3
-};
+// 标题样式
+.backgroundColor('rgba(0, 87, 217, 0.5)')
+.fontColor('#FFFFFF')
+.fontWeight(FontWeight.Bold)
+
+// 信息文本样式
+.fontSize(12)
+.fontColor('#000000')
+.margin({ bottom: 4 })
+
+// 特殊变换
+.scale({ x: 0.8, y: 0.8, centerX: '0%', centerY: '100%' })
+.rotate({ angle: 90, centerX: '0%', centerY: '100%' })
+.translate({ x: 0, y: '-100%' })
 ```
 
-### 步骤2：在PhotoManager中实现固定水印绘制
+### 与OffscreenCanvas技术集成
 
+虽然界面层使用声明式UI组件实现水印显示，但实际图片处理仍需要OffscreenCanvas技术：
+
+1. **界面预览**：WatermarkOverlay提供实时预览效果
+2. **数据收集**：收集时间、位置、天气等信息
+3. **离屏绘制**：使用OffscreenCanvas将水印信息绘制到图片上
+4. **最终输出**：生成带水印的图片文件
+
+### 性能优化策略
+
+#### 1. 界面层优化
+- 使用@State管理状态变化
+- 合理设置重绘区域
+- 避免不必要的布局计算
+
+#### 2. 数据层优化
+- 异步加载和保存配置信息
+- 缓存机制减少重复计算
+- 错误处理确保稳定性
+
+#### 3. 图片处理优化
+- 异步处理避免阻塞UI线程
+- 合理控制OffscreenCanvas生命周期
+- 内存管理和及时释放资源
+
+## 完整集成流程
+
+### 1. 预览阶段 (UI层)
 ```typescript
-// PhotoManager.ets 添加固定水印绘制方法
-import { image } from '@kit.ImageKit';
-import drawing from '@ohos.drawing';
-
-async addFixedWatermarkToPhoto(
-  pixelMap: PixelMap, 
-  watermarkInfo: WatermarkInfo
-): Promise<PixelMap> {
-  try {
-    // 获取原图信息
-    const imageInfo = await pixelMap.getImageInfo();
-    const width = imageInfo.size.width;
-    const height = imageInfo.size.height;
-    
-    // 创建画布（与原图相同尺寸）
-    const canvas = new drawing.Canvas();
-    const bitmap = drawing.Bitmap.createBitmap(width, height, drawing.ColorType.RGBA_8888);
-    canvas.drawBitmap(bitmap, 0, 0);
-    
-    // 1. 先绘制原图
-    canvas.drawPixelMap(pixelMap, 0, 0);
-    
-    // 2. 创建旋转后的水印区域
-    canvas.save();
-    
-    // 应用变换：旋转90度 + 缩放80% + 移动到左上角
-    canvas.rotate(WATERMARK_ROTATION, 0, height); // 左下角为旋转中心
-    canvas.scale(WATERMARK_SCALE, WATERMARK_SCALE, 0, height);
-    
-    // 3. 绘制固定水印内容（8行结构）
-    this.drawFixedWatermarkContent(canvas, watermarkInfo);
-    
-    canvas.restore();
-    
-    // 4. 生成新的PixelMap
-    return this.canvasToPixelMap(canvas, width, height);
-    
-  } catch (error) {
-    Logger.error('PhotoManager', `Fixed watermark failed: ${error}`);
-    return pixelMap; // 失败时返回原图
-  }
-}
-
-private drawFixedWatermarkContent(
-  canvas: drawing.Canvas, 
-  info: WatermarkInfo
-): void {
-  const paint = new drawing.Paint();
-  
-  // 设置字体
-  const font = new drawing.Font();
-  font.setSize(12);
-  paint.setFont(font);
-  
-  // 1. 绘制标题行背景
-  paint.setColor(WATERMARK_TITLE_BG);
-  canvas.drawRect(0, 0, 200, 30, paint);
-  
-  // 2. 绘制标题文字
-  paint.setColor('#FFFFFF');
-  canvas.drawText('应急消防', 70, 20, paint);
-  
-  // 3. 绘制白色背景区域（70%透明）
-  paint.setColor(WATERMARK_BACKGROUND);
-  canvas.drawRect(0, 30, 200, 250, paint);
-  
-  // 4. 绘制8行信息（黑色文字）
-  paint.setColor('#000000');
-  const lineHeight = 15;
-  const startY = 45;
-  
-  const lines = [
-    `拍摄时间：${info.timestamp}`,
-    `天气：${info.weather || '晴朗'}`,
-    `位置：${info.location || '北京市朝阳区'}`,
-    `海拔：${info.altitude || '50米'}`,
-    `方向：${info.direction || '北偏东30度'}`,
-    `经度：${info.longitude || '116.4074°'}`,
-    `纬度：${info.latitude || '39.9042°'}`,
-    `制作单位：${info.organization || '消防救援支队'}`
-  ];
-  
-  lines.forEach((line, index) => {
-    canvas.drawText(line, 10, startY + index * lineHeight, paint);
-  });
-  
-  // 5. 绘制阴影效果
-  this.drawShadowEffect(canvas);
-}
-```
-
-### 步骤3：集成到Index.ets拍照流程
-
-```typescript
-// 在 Index.ets 中添加水印开关状态
-@State private isWatermarkVisible: boolean = true;
-@State private watermarkInfo: WatermarkInfo = {
-  timestamp: this.getCurrentTimestamp(),
-  weather: '晴朗',
-  location: '北京市朝阳区', 
-  altitude: '50米',
-  direction: '北偏东30度',
-  longitude: '116.4074°',
-  latitude: '39.9042°',
-  organization: '消防救援支队'
-};
-
-// 修改拍照处理逻辑
-async onPhotoCapture(pixelMap: PixelMap) {
-  try {
-    let finalPixelMap = pixelMap;
-    
-    // 如果启用水印，添加固定样式水印
-    if (this.isWatermarkVisible) {
-      finalPixelMap = await this.photoManager.addFixedWatermarkToPhoto(
-        pixelMap,
-        this.watermarkInfo
-      );
-    }
-    
-    // 保存最终照片（带或不带水印）
-    await this.photoManager.savePhoto(finalPixelMap);
-    
-    // 显示预览
-    this.previewImage = finalPixelMap;
-    this.isPreviewImageVisible = true;
-    
-  } catch (error) {
-    Logger.error('Index', `Photo capture failed: ${error}`);
-  }
-}
-
-// 更新时间戳（每秒更新，与WatermarkOverlay同步）
-private updateWatermarkTimestamp() {
-  setInterval(() => {
-    this.watermarkInfo.timestamp = this.getCurrentTimestamp();
-  }, 1000);
-}
-```
-
-### 步骤4：同步水印数据
-
-确保 `Index.ets` 和 `WatermarkOverlay.ets` 使用相同的水印数据：
-
-```typescript
-// 在 Index.ets 中同步水印信息
-@Link @Watch('onWatermarkInfoChange') watermarkInfo: WatermarkInfo;
-
-onWatermarkInfoChange() {
-  // 当水印信息变化时更新拍照用的数据
-  this.photoManager.updateWatermarkData(this.watermarkInfo);
-}
-
-// 在拍照前同步最新的组织单位信息
-async syncOrganizationData() {
-  try {
-    const prefs = await preferences.getPreferences(getContext(this), 'watermark_prefs');
-    const orgName = await prefs.get('organization_name', '消防救援支队') as string;
-    this.watermarkInfo.organization = orgName;
-  } catch (error) {
-    Logger.error('Index', `Sync org data failed: ${error}`);
-  }
-}
-```
-
-## 关键代码修改点
-
-### 1. PhotoManager.ets 完整实现
-
-```typescript
-import { image } from '@kit.ImageKit';
-import drawing from '@ohos.drawing';
-
-export class PhotoManager {
-  // ... 现有代码 ...
-  
-  // 添加固定水印的核心方法
-  async addFixedWatermarkToPhoto(
-    pixelMap: PixelMap, 
-    watermarkInfo: WatermarkInfo
-  ): Promise<PixelMap> {
-    return new Promise(async (resolve) => {
-      try {
-        const imageInfo = await pixelMap.getImageInfo();
-        const width = imageInfo.size.width;
-        const height = imageInfo.size.height;
-        
-        // 创建绘制环境
-        const canvas = new drawing.Canvas();
-        const bitmap = drawing.Bitmap.createBitmap(width, height, drawing.ColorType.RGBA_8888);
-        canvas.drawBitmap(bitmap, 0, 0);
-        
-        // 绘制原图
-        canvas.drawPixelMap(pixelMap, 0, 0);
-        
-        // 保存当前状态
-        canvas.save();
-        
-        // 应用固定变换：旋转90度，缩放80%，左下角为原点
-        canvas.translate(0, height); // 移动到左下角
-        canvas.rotate(-90, 0, 0);      // 顺时针旋转90度
-        canvas.scale(0.8, 0.8, 0, 0);  // 缩放到80%
-        
-        // 绘制固定样式的水印内容
-        this.drawEmergencyWatermark(canvas, watermarkInfo);
-        
-        // 恢复状态
-        canvas.restore();
-        
-        // 转换回PixelMap
-        const newPixelMap = await this.canvasToPixelMap(canvas, width, height);
-        resolve(newPixelMap);
-        
-      } catch (error) {
-        Logger.error('PhotoManager', `Watermark failed: ${error}`);
-        resolve(pixelMap); // 返回原图
-      }
-    });
-  }
-  
-  private drawEmergencyWatermark(
-    canvas: drawing.Canvas, 
-    info: WatermarkInfo
-  ): void {
-    const paint = new drawing.Paint();
-    paint.setAntiAlias(true);
-    
-    // 绘制标题背景（蓝色半透明）
-    paint.setColor('rgba(0, 87, 217, 0.5)');
-    canvas.drawRect(0, 0, 200, 30, paint);
-    
-    // 绘制标题文字（白色）
-    paint.setColor('#FFFFFF');
-    const titleFont = new drawing.Font();
-    titleFont.setSize(14);
-    titleFont.setWeight(drawing.FontWeight.BOLD);
-    paint.setFont(titleFont);
-    canvas.drawText('应急消防', 70, 20, paint);
-    
-    // 绘制主要内容背景（白色70%透明）
-    paint.setColor('rgba(255, 255, 255, 0.7)');
-    canvas.drawRect(0, 30, 200, 250, paint);
-    
-    // 绘制内容文字（黑色）
-    paint.setColor('#000000');
-    const contentFont = new drawing.Font();
-    contentFont.setSize(12);
-    paint.setFont(contentFont);
-    
-    const lines = [
-      `拍摄时间：${info.timestamp}`,
-      `天气：${info.weather || '晴朗'}`,
-      `位置：${info.location || '北京市朝阳区'}`,
-      `海拔：${info.altitude || '50米'}`,
-      `方向：${info.direction || '北偏东30度'}`,
-      `经度：${info.longitude || '116.4074°'}`,
-      `纬度：${info.latitude || '39.9042°'}`,
-      `制作单位：${info.organization || '消防救援支队'}`
-    ];
-    
-    lines.forEach((line, index) => {
-      canvas.drawText(line, 10, 45 + index * 15, paint);
-    });
-    
-    // 绘制制作单位背景（蓝色半透明）
-    paint.setColor('rgba(0, 87, 217, 0.5)');
-    canvas.drawRect(0, 165, 200, 185, paint);
-    
-    // 制作单位文字（白色）
-    paint.setColor('#FFFFFF');
-    canvas.drawText(`制作单位：${info.organization || '消防救援支队'}`, 10, 180, paint);
-  }
-  
-  private canvasToPixelMap(
-    canvas: drawing.Canvas, 
-    width: number, 
-    height: number
-  ): Promise<PixelMap> {
-    return new Promise((resolve) => {
-      // 将canvas内容转换为PixelMap的实现
-      // 这里需要根据实际的HarmonyOS API进行实现
-      resolve(canvas.getPixelMap());
-    });
-  }
-}
-```
-
-### 2. Index.ets 集成修改
-
-```typescript
-// 在 Index 组件中添加水印相关状态和方法
-@Entry
-@Component
-struct Index {
-  // ... 现有代码 ...
-  
-  // 水印相关状态
-  @State watermarkInfo: WatermarkInfo = {
-    timestamp: '',
+// WatermarkOverlay组件提供实时预览
+WatermarkOverlay({
+  watermarkInfo: {
+    timestamp: '2025-01-08 14:30:25',
     weather: '晴朗',
     location: '北京市朝阳区',
-    altitude: '50米', 
+    altitude: '50米',
     direction: '北偏东30度',
     longitude: '116.4074°',
     latitude: '39.9042°',
     organization: '消防救援支队'
-  };
-  @State isWatermarkVisible: boolean = true;
+  }
+})
+```
+
+### 2. 拍照阶段 (相机层)
+```typescript
+// PhotoManager.ets中集成水印处理
+async capturePhoto(): Promise<string> {
+  // 1. 获取原始图片PixelMap
+  const originalPixelMap = await this.captureOriginalPhoto();
   
-  aboutToAppear() {
-    // ... 现有代码 ...
-    
-    // 初始化水印时间戳
-    this.updateWatermarkTimestamp();
-    this.syncOrganizationData();
+  // 2. 获取当前水印信息
+  const watermarkInfo = this.getCurrentWatermarkInfo();
+  
+  // 3. 使用OffscreenCanvas添加水印
+  const watermarkedPixelMap = await this.addWatermarkToPixelMap(originalPixelMap, watermarkInfo);
+  
+  // 4. 保存带水印的图片
+  return await this.savePhoto(watermarkedPixelMap);
+}
+```
+
+### 3. 水印处理核心逻辑
+```typescript
+// 在PhotoManager中添加水印处理方法
+private async addWatermarkToPhoto(
+  pixelMap: image.PixelMap, 
+  watermarkInfo: WatermarkInfo
+): Promise<image.PixelMap> {
+  // 1. 创建离屏画布
+  const offscreenCanvas = new OffscreenCanvas(width, height);
+  const ctx = offscreenCanvas.getContext('2d');
+  
+  // 2. 绘制原始图片
+  ctx.drawImage(pixelMap, 0, 0, width, height);
+  
+  // 3. 根据WatermarkInfo绘制水印信息
+  this.drawWatermarkInfo(ctx, watermarkInfo);
+  
+  // 4. 返回处理后的PixelMap
+  return ctx.getPixelMap(0, 0, width, height);
+}
+```
+
+### 4. 数据同步机制
+```typescript
+// PreviewViewModel.ets中管理水印状态
+@Observed
+class WatermarkViewModel {
+  @Track watermarkInfo: WatermarkInfo;
+  
+  // 同步UI组件和处理逻辑的数据
+  updateWatermarkInfo(info: Partial<WatermarkInfo>) {
+    this.watermarkInfo = { ...this.watermarkInfo, ...info };
   }
   
-  // 拍照处理方法（替换现有方法）
-  async capturePhoto() {
-    try {
-      // 同步最新的组织单位信息
-      await this.syncOrganizationData();
-      
-      // 执行拍照
-      const originalPixelMap = await this.photoManager.capturePhoto();
-      
-      if (this.isWatermarkVisible && originalPixelMap) {
-        // 添加固定样式水印
-        const watermarkedPixelMap = await this.photoManager.addFixedWatermarkToPhoto(
-          originalPixelMap,
-          this.watermarkInfo
-        );
-        
-        // 保存带水印的照片
-        await this.photoManager.savePhoto(watermarkedPixelMap);
-        
-        // 显示预览
-        this.previewImage = watermarkedPixelMap;
-      } else {
-        // 保存原图
-        await this.photoManager.savePhoto(originalPixelMap);
-        this.previewImage = originalPixelMap;
-      }
-      
-      this.isPreviewImageVisible = true;
-      showToast('拍照成功');
-      
-    } catch (error) {
-      Logger.error('Index', `Photo capture failed: ${error}`);
-      showToast('拍照失败');
-    }
-  }
-  
-  // 同步组织单位数据
-  private async syncOrganizationData() {
-    try {
-      const prefs = await preferences.getPreferences(getContext(this), 'watermark_prefs');
-      const orgName = await prefs.get('organization_name', '消防救援支队') as string;
-      this.watermarkInfo.organization = orgName;
-    } catch (error) {
-      Logger.error('Index', `Sync org data failed: ${error}`);
-    }
-  }
-  
-  // 更新时间戳
-  private updateWatermarkTimestamp() {
-    // 立即更新一次
-    this.watermarkInfo.timestamp = this.getCurrentTimestamp();
-    
-    // 每秒更新（与WatermarkOverlay同步）
-    setInterval(() => {
-      this.watermarkInfo.timestamp = this.getCurrentTimestamp();
-    }, 1000);
-  }
-  
-  private getCurrentTimestamp(): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  // 获取当前水印信息供拍照使用
+  getCurrentWatermarkInfo(): WatermarkInfo {
+    return this.watermarkInfo;
   }
 }
 ```
 
-## 测试验证
+## 关键技术实现细节
 
-### 功能测试清单
-- [ ] 拍照时正确叠加固定样式水印
-- [ ] 水印包含完整的8行信息
-- [ ] 旋转90度效果正确实现
-- [ ] 80%缩放比例正确应用
-- [ ] 时间戳与预览界面同步更新
-- [ ] 组织单位信息正确同步
-- [ ] 水印开关功能正常
-- [ ] 异常情况下返回原图
+### 1. 坐标转换处理
+由于WatermarkOverlay组件使用了旋转和缩放变换，在OffscreenCanvas处理时需要相应的坐标转换：
 
-### 视觉效果验证
-- [ ] 水印颜色与预览一致（蓝色标题+白色内容）
-- [ ] 透明度效果正确（70%背景透明度）
-- [ ] 阴影效果与预览一致
-- [ ] 字体大小和样式匹配
-- [ ] 整体布局与预览界面一致
+```typescript
+// 将UI坐标转换为图片坐标
+private transformUICoordinatesToImage(
+  uiX: number, 
+  uiY: number, 
+  imageWidth: number, 
+  imageHeight: number
+): { x: number; y: number } {
+  // 考虑旋转90度和缩放80%的变换
+  const scale = 0.8;
+  const angle = 90 * Math.PI / 180;
+  
+  // 应用逆变换
+  const centerX = imageWidth * 0.1; // 左上角区域
+  const centerY = imageHeight * 0.1;
+  
+  return {
+    x: centerX + (uiX * Math.cos(angle) - uiY * Math.sin(angle)) / scale,
+    y: centerY + (uiX * Math.sin(angle) + uiY * Math.cos(angle)) / scale
+  };
+}
+```
 
-### 性能考虑
-- 水印绘制应在主线程快速完成
-- 避免影响拍照响应速度（<100ms）
-- 内存使用优化，及时释放临时对象
-- 异常处理确保不会导致拍照失败
+### 2. 字体和样式匹配
+确保OffscreenCanvas绘制的样式与UI预览一致：
 
-## 注意事项
+```typescript
+private applyWatermarkStyle(ctx: OffscreenCanvasRenderingContext2D) {
+  // 匹配WatermarkOverlay的样式
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = '#000000'; // 黑色文字
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  
+  // 特殊样式处理
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(90 * Math.PI / 180); // 旋转90度
+  ctx.scale(0.8, 0.8); // 缩放80%
+}
+```
 
-1. **固定样式不可修改**：由于UI已固定，照片叠加必须保持完全一致的视觉效果
-2. **时间同步**：确保拍照时的时间戳与预览界面同步
-3. **数据一致性**：组织单位信息需要与WatermarkOverlay.ets保持同步
-4. **异常处理**：水印处理失败时必须返回原图，不能影响正常拍照
-5. **性能要求**：水印处理必须在拍照完成后立即进行，不能有明显延迟
-6. **资源管理**：正确管理Canvas和Paint对象，避免内存泄漏
+### 3. 分层绘制策略
+按照WatermarkOverlay的视觉层次进行绘制：
 
-通过以上方案，可以在保持固定水印UI样式的同时，实现照片叠加水印的完整功能。
+```typescript
+private drawWatermarkInfo(ctx: OffscreenCanvasRenderingContext2D, info: WatermarkInfo) {
+  // 1. 绘制背景层（半透明白色）
+  this.drawBackgroundLayer(ctx);
+  
+  // 2. 绘制标题区域（蓝色半透明）
+  this.drawTitleSection(ctx, info);
+  
+  // 3. 绘制信息列表（黑色文字）
+  this.drawInfoList(ctx, info);
+  
+  // 4. 绘制制作单位（特殊蓝色背景）
+  this.drawOrganizationSection(ctx, info);
+}
+```
 
+## 错误处理
+
+### 1. 图片解析错误
+- 处理损坏或格式不支持图片
+- 提供友好的错误提示
+
+### 2. 内存不足
+- 监控内存使用情况
+- 提供降级方案（如降低图片质量）
+
+### 3. 文件保存失败
+- 处理存储权限问题
+- 处理磁盘空间不足
+
+## 兼容性考虑
+
+### 1. 设备适配
+- 适配不同屏幕密度和分辨率
+- 处理横竖屏切换
+
+### 2. 系统版本
+- 兼容不同HarmonyOS版本
+- 处理API差异
+
+### 3. 权限管理
+- 确保必要的文件读写权限
+- 处理权限被拒绝场景
+
+## 测试方案
+
+### 1. 功能测试
+- 水印添加准确性验证
+- 不同样式水印测试
+- 批量处理稳定性测试
+
+### 2. 性能测试
+- 处理时间测试
+- 内存占用测试
+- 大文件处理测试
+
+### 3. 兼容性测试
+- 不同设备测试
+- 不同系统版本测试
+- 异常情况测试
+
+## 相关权限
+
+本方案需要以下权限支持：
+- `ohos.permission.WRITE_IMAGEVIDEO`：写入图片文件
+- `ohos.permission.READ_IMAGEVIDEO`：读取图片文件
+- `ohos.permission.CAMERA`：相机使用权限（已有）
+
+## 约束与限制
+
+1. 支持HarmonyOS 5.1.1 Release及以上版本
+2. 支持标准系统设备：华为手机、平板
+3. 图片格式支持：PNG、JPEG等常见格式
+4. 水印文本长度建议不超过50个字符
+5. 同时处理图片数量建议不超过10张
+
+## 后续优化方向
+
+1. **AI智能水印**：根据图片内容自动选择水印位置和样式
+2. **云端处理**：支持云端批量水印处理
+3. **模板系统**：提供丰富的水印模板库
+4. **性能提升**：利用GPU加速处理过程
+5. **用户体验**：提供更直观的操作界面

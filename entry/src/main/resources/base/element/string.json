@@ -133,6 +133,50 @@
       "value": "Dual-channel preview has been disabled"
     },
     {
+      "name": "watermark_open",
+      "value": "Watermark is enabled"
+    },
+    {
+      "name": "watermark_close",
+      "value": "Watermark is disabled"
+    },
+    {
+      "name": "watermark_title",
+      "value": "Fire Rescue"
+    },
+    {
+      "name": "watermark_timestamp",
+      "value": "Time"
+    },
+    {
+      "name": "watermark_weather",
+      "value": "Weather"
+    },
+    {
+      "name": "watermark_location",
+      "value": "Location"
+    },
+    {
+      "name": "watermark_altitude",
+      "value": "Altitude"
+    },
+    {
+      "name": "watermark_direction",
+      "value": "Direction"
+    },
+    {
+      "name": "watermark_longitude",
+      "value": "Longitude"
+    },
+    {
+      "name": "watermark_latitude",
+      "value": "Latitude"
+    },
+    {
+      "name": "watermark_organization",
+      "value": "Organization"
+    },
+    {
       "name": "permission_LOCATION",
       "value": "For location"
     }
