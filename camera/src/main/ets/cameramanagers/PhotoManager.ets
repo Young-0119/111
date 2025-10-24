@@ -62,9 +62,16 @@ export class PhotoManager implements OutputManager {
   }
 
   async createOutput(config: CreateOutputConfig) {
+    Logger.info(TAG_LOG, `createOutput called - current output exists: ${!!this.output}`);
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
     cameraPhotoOutput = this.createPhotoOutput(config.cameraManager, config.device, config.profile);
     if (cameraPhotoOutput) {
+      // 如果已有输出，先清理之前的回调
+      if (this.output) {
+        Logger.info(TAG_LOG, 'Clearing previous output callbacks before setting new output');
+        this.output?.off('photoAssetAvailable');
+        this.output?.off('photoAvailable');
+      }
       this.output = cameraPhotoOutput;
       this.setPhotoOutputCallback(this.isSingle);
     }
@@ -242,7 +249,7 @@ export class PhotoManager implements OutputManager {
   setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
     Logger.info(TAG_LOG, 'Setting up photoAvailable callback for single photo mode');
     photoOutput.on('photoAvailable', (errCode: BusinessError, photo: camera.Photo): void => {
-      Logger.info(TAG_LOG, 'photoAvailable callback triggered');
+      Logger.info(TAG_LOG, `photoAvailable callback triggered - timestamp: ${new Date().getTime()}`);
       if (errCode || photo === undefined) {
         Logger.error(TAG_LOG, `getPhoto failed, errCode: ${errCode}, photo: ${photo}`);
         return;
@@ -292,10 +299,20 @@ export class PhotoManager implements OutputManager {
           Logger.info(TAG_LOG, `Watermark not applied. Enabled: ${this.isWatermarkEnabled}, Info: ${JSON.stringify(this.watermarkInfo)}`);
         }
         
+        // 生成动态文件名 - 使用时间戳确保唯一性
+        const timestamp = new Date().getTime();
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        
         let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
         let extension: string = 'jpg';
         let options: photoAccessHelper.CreateOptions = {
-          title: 'testPhoto'
+          title: `Photo_${year}${month}${day}_${hours}${minutes}${seconds}_${timestamp}`
         }
         try {
           let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
@@ -331,10 +348,14 @@ export class PhotoManager implements OutputManager {
     }
     if (isSingle) {
       Logger.info(TAG_LOG, 'Setting up single photo mode callbacks');
+      // 清除所有之前的回调，避免重复注册
       this.output?.off('photoAssetAvailable');
+      this.output?.off('photoAvailable');
       this.setPhotoOutputCbSingle(this.output, this.context);
     } else {
       Logger.info(TAG_LOG, 'Setting up double photo mode callbacks');
+      // 清除所有之前的回调，避免重复注册
+      this.output?.off('photoAssetAvailable');
       this.output?.off('photoAvailable');
       this.setPhotoOutputCbDouble(this.output);
     }

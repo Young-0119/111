@@ -200,24 +200,25 @@ struct SettingButtonsView {
       .fontColor([Color.White])
   }
 
-  @Builder
-  togglePhotoModeButton() {
-    SymbolGlyph(this.isSinglePhoto
-      ? $r('sys.symbol.picture')
-      : $r('sys.symbol.picture_on_square_1'))
-      .onClick(() => {
-        this.isSinglePhoto = !this.isSinglePhoto;
-        this.photoManager.setPhotoOutputCallback(this.isSinglePhoto);
-        if (this.isSinglePhoto) {
-          this.isLivePhoto = false;
-        }
-        this.photoManager.enableMovingPhoto(this.isLivePhoto);
-        const message = this.isSinglePhoto ? $r('app.string.photo_single') : $r('app.string.photo_double');
-        showToast(this.getUIContext(), message);
-      })
-      .fontSize(22)
-      .fontColor([Color.White])
-  }
+  // 双拍模式功能已删除 - 移除模式切换按钮
+  // @Builder
+  // togglePhotoModeButton() {
+  //   SymbolGlyph(this.isSinglePhoto
+  //     ? $r('sys.symbol.picture')
+  //     : $r('sys.symbol.picture_on_square_1'))
+  //     .onClick(() => {
+  //       this.isSinglePhoto = !this.isSinglePhoto;
+  //       this.photoManager.setPhotoOutputCallback(this.isSinglePhoto);
+  //       if (this.isSinglePhoto) {
+  //         this.isLivePhoto = false;
+  //       }
+  //       this.photoManager.enableMovingPhoto(this.isLivePhoto);
+  //       const message = this.isSinglePhoto ? $r('app.string.photo_single') : $r('app.string.photo_double');
+  //       showToast(this.getUIContext(), message);
+  //     })
+  //     .fontSize(22)
+  //     .fontColor([Color.White])
+  // }
 
   build() {
     Row() {
@@ -225,10 +226,9 @@ struct SettingButtonsView {
         this.rateButton()
         this.flashButton(this.photoFlashModes)
         this.delayPhotoButton(this.getPhotoDelayTimeElements())
-        if (!this.isSinglePhoto) {
-          this.livePhotoButton()
-        }
-        this.togglePhotoModeButton()
+        // 双拍模式已删除，livePhoto功能始终可用
+        this.livePhotoButton()
+        // this.togglePhotoModeButton() // 双拍模式切换按钮已删除
       } else {
         if (this.videoManager.isRecording()) {
           this.videoTimerBuilder()

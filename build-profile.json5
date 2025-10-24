@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\Lenovo\\.ohos\\config\\default_CustomCamera_q98HSMIGs9j3uayujoX61m8QChkyguIrPrQDHBQ-35w=.cer",
+          "certpath": "C:\\Users\\19716\\.ohos\\config\\default_111_wWQr6QWWXPMmQ_t1qDq_tc0lrZ5xp_DXwBLwEx7Xqjk=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001BDCE149A10CFE2CB6ED6EC53A0055A8B1447A1C1EEE7C0E91F1D30F3428082741BAF89FB79ADC52",
-          "profile": "C:\\Users\\Lenovo\\.ohos\\config\\default_CustomCamera_q98HSMIGs9j3uayujoX61m8QChkyguIrPrQDHBQ-35w=.p7b",
+          "keyPassword": "0000001BA9AEE49367BECE853B237F22410CE30071636DF8702F28290A3E20F2261AFDFEFECF3F0A96B2A1",
+          "profile": "C:\\Users\\19716\\.ohos\\config\\default_111_wWQr6QWWXPMmQ_t1qDq_tc0lrZ5xp_DXwBLwEx7Xqjk=.p7b",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\Lenovo\\.ohos\\config\\default_CustomCamera_q98HSMIGs9j3uayujoX61m8QChkyguIrPrQDHBQ-35w=.p12",
-          "storePassword": "0000001BA290090B12EC36CE5FF8E8383686C246EA42142CE683590297E98C5A0841366F58F5A6AEDC7737"
+          "storeFile": "C:\\Users\\19716\\.ohos\\config\\default_111_wWQr6QWWXPMmQ_t1qDq_tc0lrZ5xp_DXwBLwEx7Xqjk=.p12",
+          "storePassword": "0000001B19C197EC652B5B29B4B3D707AA8553BD82161ABF946039FE7F72A44F61FE924CA20F0B4EF2EF17"
         }
       }
     ],

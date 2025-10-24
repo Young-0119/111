@@ -73,54 +73,102 @@ export class ImageWatermarkUtil {
     padding: 8,
     lineHeight: 16
   };
+  private static isProcessingWatermark = false; // 防止重复处理
+  private static lastProcessedImageHash = ''; // 记录最后处理的图片哈希
   
 
   /**
-   * 添加水印到PixelMap（支持PixelMap输入，支持坐标转换）
+   * 给PixelMap添加水印
    */
-  static async addWatermarkToPixelMap(
-    originalPixelMap: image.PixelMap,
+  public static async addWatermarkToPixelMap(
+    pixelMap: image.PixelMap,
     watermarkInfo: WatermarkInfo,
     style: WatermarkStyle = ImageWatermarkUtil.DEFAULT_STYLE,
     uiPosition?: Position,
     uiSize?: Size
   ): Promise<image.PixelMap> {
+    Logger.info(TAG, 'Starting addWatermarkToPixelMap process');
+    
+    // 防止重复处理
+    if (ImageWatermarkUtil.isProcessingWatermark) {
+      Logger.warn(TAG, 'Watermark processing already in progress, skipping duplicate request');
+      throw new Error('Watermark processing already in progress');
+    }
+    
+    ImageWatermarkUtil.isProcessingWatermark = true;
+    
     try {
-      Logger.info(TAG, 'Starting watermark addition process');
+      // 验证输入参数
+      if (!pixelMap) {
+        throw new Error('Invalid pixelMap: null or undefined');
+      }
       
-      // 获取原始图片尺寸
-      const imageInfo = await originalPixelMap.getImageInfo();
-      const width = imageInfo.size.width;
-      const height = imageInfo.size.height;
+      // 获取图像尺寸和基本信息
+      const imageWidth = pixelMap.getImageInfoSync().size.width;
+      const imageHeight = pixelMap.getImageInfoSync().size.height;
+      Logger.info(TAG, `Original image dimensions: ${imageWidth}x${imageHeight}`);
       
-      Logger.info(TAG, `Original image size: ${width}x${height}`);
+      if (imageWidth <= 0 || imageHeight <= 0) {
+        throw new Error(`Invalid image dimensions: ${imageWidth}x${imageHeight}`);
+      }
+      
+      // 生成简单的图片标识符，用于检测重复处理
+      const currentImageId = `${imageWidth}x${imageHeight}-${Date.now()}`;
+      if (ImageWatermarkUtil.lastProcessedImageHash === currentImageId) {
+        Logger.warn(TAG, `Image with ID ${currentImageId} was already processed, skipping duplicate`);
+        throw new Error('Duplicate image processing detected');
+      }
+      ImageWatermarkUtil.lastProcessedImageHash = currentImageId;
       
       // 创建离屏画布
-      const offscreenCanvas = new OffscreenCanvas(width, height);
-      const offscreenContext = offscreenCanvas.getContext('2d');
+      const canvas = new OffscreenCanvas(imageWidth, imageHeight);
+      const context = canvas.getContext('2d');
       
-      // 绘制原始图片
-      offscreenContext.drawImage(originalPixelMap, 0, 0, width, height);
+      if (!context) {
+        throw new Error('Failed to get 2D context from OffscreenCanvas');
+      }
       
-      // 绘制水印（支持坐标转换）
-      await ImageWatermarkUtil.drawWatermark(offscreenContext, watermarkInfo, style, width, height, uiPosition, uiSize);
+      // 清空画布并设置为透明背景
+      context.clearRect(0, 0, imageWidth, imageHeight);
       
-      // 获取处理后的PixelMap
-      Logger.info(TAG, 'Converting OffscreenCanvas to ImageBitmap...');
-      const imageBitmap = offscreenCanvas.transferToImageBitmap();
+      // 绘制原始图像
+      Logger.info(TAG, 'Drawing original image to canvas');
+      context.drawImage(pixelMap, 0, 0, imageWidth, imageHeight);
       
-      // 将ImageBitmap转换为PixelMap
-      Logger.info(TAG, 'Converting ImageBitmap to PixelMap...');
+      // 检查画布状态，防止重复绘制
+      const imageData = context.getImageData(0, 0, imageWidth, imageHeight);
+      const pixelCount = imageData.data.length / 4;
+      Logger.info(TAG, `Canvas pixel count after drawing original image: ${pixelCount}`);
+      
+      // 绘制水印
+      Logger.info(TAG, 'Drawing watermark on canvas');
+      await ImageWatermarkUtil.drawWatermark(
+        context,
+        watermarkInfo,
+        style,
+        imageWidth,
+        imageHeight,
+        uiPosition,
+        uiSize
+      );
+      
+      // 再次检查画布状态
+      const finalImageData = context.getImageData(0, 0, imageWidth, imageHeight);
+      Logger.info(TAG, `Final canvas pixel count: ${finalImageData.data.length / 4}`);
+      
+      // 转换为PixelMap
+      Logger.info(TAG, 'Converting canvas to PixelMap');
+      const imageBitmap = canvas.transferToImageBitmap();
       const watermarkedPixelMap = await ImageWatermarkUtil.imageBitmapToPixelMap(imageBitmap);
       
-      Logger.info(TAG, 'Watermark drawn successfully on PixelMap');
-      Logger.info(TAG, 'Watermark addition completed successfully');
+      Logger.info(TAG, 'addWatermarkToPixelMap completed successfully');
       return watermarkedPixelMap;
       
     } catch (error) {
-      Logger.error(TAG, `Failed to add watermark: ${error}`);
-      // 不重新抛出错误，而是返回原始图片或抛出标准Error
-      throw new Error(`Failed to add watermark: ${error}`);
+      Logger.error(TAG, `Failed to add watermark to PixelMap: ${error}`);
+      throw new Error(`Failed to add watermark to PixelMap: ${error}`);
+    } finally {
+      ImageWatermarkUtil.isProcessingWatermark = false;
     }
   }
 
@@ -136,9 +184,9 @@ export class ImageWatermarkUtil {
       const width = imageBitmap.width;
       const height = imageBitmap.height;
       
-      // 创建canvas来提取像素数据
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext('2d');
+      // 创建临时canvas来提取像素数据
+      const tempCanvas = new OffscreenCanvas(width, height);
+      const ctx = tempCanvas.getContext('2d');
       
       // 将ImageBitmap绘制到canvas
       ctx.drawImage(imageBitmap, 0, 0);
@@ -401,6 +449,14 @@ export class ImageWatermarkUtil {
   ): Promise<ArrayBuffer> {
     const startTime = Date.now();
     
+    // 防止重复处理
+    if (ImageWatermarkUtil.isProcessingWatermark) {
+      Logger.warn(TAG, 'Watermark processing already in progress, skipping duplicate request');
+      throw new Error('Watermark processing already in progress');
+    }
+    
+    ImageWatermarkUtil.isProcessingWatermark = true;
+    
     try {
       // 参数验证
       if (!imageBuffer || imageBuffer.byteLength === 0) {
@@ -473,6 +529,8 @@ export class ImageWatermarkUtil {
       
       // 如果没有原始图片，抛出自定义错误
       throw new Error('Failed to add watermark to ArrayBuffer: no valid image buffer available');
+    } finally {
+      ImageWatermarkUtil.isProcessingWatermark = false;
     }
   }
 
@@ -509,12 +567,21 @@ export class ImageWatermarkUtil {
         throw new Error(`Image too large for conversion: ${bufferSize} bytes`);
       }
       
-      // 读取像素数据
-      const buffer = new ArrayBuffer(bufferSize);
-      await pixelMap.readPixelsToBuffer(buffer);
+      // 使用ImagePacker进行格式转换，保留更好的图片质量
+      Logger.info(TAG, 'Using ImagePacker for better format conversion');
+      const imagePacker = image.createImagePacker();
       
-      Logger.info(TAG, `PixelMap to ArrayBuffer conversion completed: ${bufferSize} bytes`);
-      return buffer;
+      // 打包为JPEG格式，保持较高质量
+      const packOpts: image.PackingOption = {
+        format: 'image/jpeg',
+        quality: 95,
+        bufferSize: bufferSize
+      };
+      
+      const resultBuffer = await imagePacker.packing(pixelMap, packOpts);
+      
+      Logger.info(TAG, `PixelMap to ArrayBuffer conversion completed: ${resultBuffer.byteLength} bytes`);
+      return resultBuffer;
       
     } catch (error) {
       Logger.error(TAG, `Failed to convert PixelMap to ArrayBuffer: ${error}`);

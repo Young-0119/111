@@ -57,6 +57,7 @@ struct Index {
   private applicationContext = this.context.getApplicationContext();
   private windowClass = (this.context as common.UIAbilityContext).windowStage.getMainWindowSync();
   @State videoManager: VideoManager = new VideoManager(this.context);
+  // 双拍模式功能已删除 - 仅保留单拍模式，此状态不再变化
   @State isSinglePhoto: boolean = true;
   @State isLivePhoto: boolean = false;
   private photoManager: PhotoManager = new PhotoManager(this.context, true, this.isSinglePhoto);
@@ -119,6 +120,10 @@ struct Index {
     
     // 初始化水印状态
     this.isWatermarkVisible = this.previewVM.isWatermarkEnabledStatus();
+    
+    // 添加水印状态初始化日志
+    Logger.info(TAG, `Index.ets aboutToAppear - Initial watermark state: ${this.isWatermarkVisible}`);
+    Logger.info(TAG, `Index.ets aboutToAppear - PreviewVM watermark enabled: ${this.previewVM.isWatermarkEnabledStatus()}`);
     
     try {
       display.on('foldStatusChange', () => {
@@ -242,7 +247,10 @@ struct Index {
     this.photoManager.enableMovingPhoto(this.isLivePhoto);
     this.photoManager.setPhotoOutputCallback(this.isSinglePhoto);
     // 同步水印信息到PhotoManager
-    if (this.previewVM.isWatermarkEnabledStatus()) {
+    const isWatermarkEnabled = this.previewVM.isWatermarkEnabledStatus();
+    Logger.info(TAG, `syncButtonSettings - PreviewVM watermark enabled: ${isWatermarkEnabled}`);
+    this.photoManager.setWatermarkEnabled(isWatermarkEnabled);
+    if (isWatermarkEnabled) {
       const watermarkInfo = this.previewVM.getWatermarkInfoForProcessing();
       this.photoManager.setWatermarkInfo(watermarkInfo);
       Logger.info(TAG, `Watermark info synced to PhotoManager: ${JSON.stringify(watermarkInfo)}`);
@@ -299,6 +307,7 @@ struct Index {
           await this.startCamera();
           this.initZooms();
           this.initRates();
+          this.syncButtonSettings(); // 同步所有设置到PhotoManager，包括水印状态
           // [EndExclude XComponent]
         })
         // [StartExclude XComponent_gesture]
@@ -471,6 +480,7 @@ struct Index {
       .onClick(() => {
         this.isWatermarkVisible = !this.isWatermarkVisible;
         this.previewVM.setWatermarkEnabled(this.isWatermarkVisible);
+        Logger.info(TAG, `watermarkButton clicked - New state: ${this.isWatermarkVisible}`);
         this.syncButtonSettings(); // 同步水印设置到PhotoManager
         const message = this.isWatermarkVisible ? $r('app.string.watermark_open') : $r('app.string.watermark_close');
         showToast(this.getUIContext(), message);
