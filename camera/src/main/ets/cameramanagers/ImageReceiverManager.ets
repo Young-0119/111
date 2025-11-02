@@ -102,7 +102,7 @@ export class ImageReceiverManager implements OutputManager {
   // [Start onImageArrival]
   onImageArrival(receiver: image.ImageReceiver): void {
     receiver.on('imageArrival', () => {
- 
+      Logger.info(TAG, 'image arrival');
       receiver.readNextImage((err: BusinessError, nextImage: image.Image) => {
         if (err || nextImage === undefined) {
           Logger.error(TAG, 'readNextImage failed');
@@ -120,7 +120,7 @@ export class ImageReceiverManager implements OutputManager {
             const width = nextImage.size.width;
             const height = nextImage.size.height;
             const stride = imgComponent.rowStride;
-
+            Logger.info(TAG, `getComponent with width:${width} height:${height} stride:${stride}`);
             const pixelMap = await this.getPixelMap(imgComponent, width, height, stride);
             let displayDefault: display.Display | null = null;
             try {
@@ -149,7 +149,7 @@ export class ImageReceiverManager implements OutputManager {
           // [StartExclude nextImage]
           // [StartExclude onImageArrival]
           nextImage.release();
-       
+          Logger.info(TAG, 'image process done');
           // [EndExclude onImageArrival]
           // [EndExclude nextImage]
         });
