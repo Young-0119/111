@@ -77,14 +77,6 @@
       "value": "动态拍照已关闭"
     },
     {
-      "name": "photo_single",
-      "value": "单段拍照"
-    },
-    {
-      "name": "photo_double",
-      "value": "双段拍照"
-    },
-    {
       "name": "stabilization_enable",
       "value": "录像防抖已开启"
     },
@@ -123,14 +115,6 @@
     {
       "name": "flash_open",
       "value": "闪光灯已开启"
-    },
-    {
-      "name": "preview_image_open",
-      "value": "双路预览已开启"
-    },
-    {
-      "name": "preview_image_close",
-      "value": "双路预览已关闭"
     },
     {
       "name": "permission_LOCATION",

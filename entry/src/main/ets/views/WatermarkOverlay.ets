@@ -160,8 +160,9 @@ export struct WatermarkOverlay {
 
   
   build() {
-    // 使用Row容器来实现左上角对齐
-    Row() {
+    // 使用Stack容器实现绝对定位，避免全屏覆盖
+    Stack() {
+      // 水印内容容器
       Column() {
         // 图片和标题行
         Row() {
@@ -177,7 +178,7 @@ export struct WatermarkOverlay {
         }
         .alignItems(VerticalAlign.Center)
         .backgroundColor('rgba(0, 87, 217, 0.5)')
-        .width('60%')
+        .width('100%')
         .padding({ left: 8, right: 8, top: 6, bottom: 6 })
 
         // 第一行：拍摄时间
@@ -260,8 +261,9 @@ export struct WatermarkOverlay {
           .fontColor('#FFFFFF')
           .fontWeight(FontWeight.Medium)
           .backgroundColor('rgba(0, 87, 217, 0.5)')
-          .width('60%')
+          .width('100%')
           .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .hitTestBehavior(HitTestMode.Block)  // 单独设置此文本可以接收触摸事件
           .gesture(
             TapGesture({ count: 2 })
               .onAction(() => {
@@ -278,6 +280,7 @@ export struct WatermarkOverlay {
         offsetX: 0,
         offsetY: 3
       })
+      .width(220)  // 固定宽度，只占用实际需要的空间
       .scale({ 
         x: 0.8, 
         y: 0.8,
@@ -296,11 +299,11 @@ export struct WatermarkOverlay {
       .padding({ left: 4, right: 4, top: 4, bottom: 4 })  // 添加内边距
       .borderRadius(8)  // 添加圆角
     }
-    .width('100%')
-    .height('100%')
-    .alignItems(VerticalAlign.Top)
-    .justifyContent(FlexAlign.Start)
-    .padding({ top: 1, left: 1 })
+    .width(400)  // Stack容器也使用固定宽度
+    .height(300) // 固定高度，足够容纳旋转后的水印
+    .alignContent(Alignment.TopStart)  // 左上角对齐
+    .position({ x: 2, y: 2 })  // 绝对定位到左上角
+    .hitTestBehavior(HitTestMode.None)  // 关键：设置为不拦截触摸事件
     .bindContentCover(this.showEditDialog, this.EditDialogBuilder(), {
       modalTransition: ModalTransition.NONE,
       backgroundColor: 'rgba(0, 0, 0, 0.4)',

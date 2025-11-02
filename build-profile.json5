@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\Lenovo\\.ohos\\config\\default_CustomCamera_q98HSMIGs9j3uayujoX61m8QChkyguIrPrQDHBQ-35w=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001BDCE149A10CFE2CB6ED6EC53A0055A8B1447A1C1EEE7C0E91F1D30F3428082741BAF89FB79ADC52",
+          "keyPassword": "0000001B98B96329A4968A8B793F410D4707C4C1CDB4C61B7089A796BF1254AFEBC05C01B4D3E7DCDD8390",
           "profile": "C:\\Users\\Lenovo\\.ohos\\config\\default_CustomCamera_q98HSMIGs9j3uayujoX61m8QChkyguIrPrQDHBQ-35w=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\Lenovo\\.ohos\\config\\default_CustomCamera_q98HSMIGs9j3uayujoX61m8QChkyguIrPrQDHBQ-35w=.p12",
-          "storePassword": "0000001BA290090B12EC36CE5FF8E8383686C246EA42142CE683590297E98C5A0841366F58F5A6AEDC7737"
+          "storePassword": "0000001B1395AE3B13D0D1909B18F1A49FBDF47BD0761AFF15FC9453E6E2C489BBC7E6A7DD894092223247"
         }
       }
     ],

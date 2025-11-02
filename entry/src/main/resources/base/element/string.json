@@ -77,14 +77,6 @@
       "value": "Live photo mode is off"
     },
     {
-      "name": "photo_single",
-      "value": "Single-segment shooting"
-    },
-    {
-      "name": "photo_double",
-      "value": "Dual-segment shooting"
-    },
-    {
       "name": "stabilization_enable",
       "value": "Video stabilization is on"
     },
@@ -123,14 +115,6 @@
     {
       "name": "flash_open",
       "value": "The flash is on"
-    },
-    {
-      "name": "preview_image_open",
-      "value": "Dual-channel preview has been enabled"
-    },
-    {
-      "name": "preview_image_close",
-      "value": "Dual-channel preview has been disabled"
     },
     {
       "name": "permission_LOCATION",

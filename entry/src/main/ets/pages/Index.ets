@@ -21,7 +21,6 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import {
   CameraManager,
   GridLine,
-  ImageReceiverManager,
   LevelIndicator,
   PhotoManager,
   PreviewManager,
@@ -57,21 +56,16 @@ struct Index {
   private applicationContext = this.context.getApplicationContext();
   private windowClass = (this.context as common.UIAbilityContext).windowStage.getMainWindowSync();
   @State videoManager: VideoManager = new VideoManager(this.context);
-  @State isSinglePhoto: boolean = false;
   @State isLivePhoto: boolean = false;
-  private photoManager: PhotoManager = new PhotoManager(this.context, true, this.isSinglePhoto);
+  private photoManager: PhotoManager = new PhotoManager(this.context, true, false);
   private previewManager: PreviewManager = new PreviewManager(() => {
     this.onPreviewStart()
   });
-  private imageReceiverManager: ImageReceiverManager = new ImageReceiverManager(px => {
-    this.onImageReceiver(px);
-  });
   private cameraManager: CameraManager = new CameraManager(this.context, [this.previewManager,
-    this.photoManager, this.videoManager, this.imageReceiverManager]);
+    this.photoManager, this.videoManager]);
   @State previewVM: PreviewViewModel = new PreviewViewModel(this.getUIContext());
   @State isGridLineVisible: boolean = false;
   @State isLevelIndicatorVisible: boolean = false;
-  @State isPreviewImageVisible: boolean = false;
   @State isFocusBoxVisible: boolean = false;
   @State focusBoxPosition: Edges = { top: 0, left: 0 };
   private focusBoxSize: Size = { width: 80, height: 80 };
@@ -87,8 +81,6 @@ struct Index {
   @State isZoomPinching: boolean = false;
   private originZoomBeforePinch: number = 1; // record zoom after pinch, sale base it.
   @State isStabilizationEnabled: boolean = false;
-  @State previewImage: PixelMap | ResourceStr = '';
-  private PreviewImageHeight: number = 80;
   @State photoDelayTime: number = 0;
   @State photoRemainder: number = 0;
   @State isDelayTakePhoto: boolean = false;
@@ -148,10 +140,6 @@ struct Index {
 
   removeOrientationChangeEventListener() {
     this.windowClass.off('windowSizeChange', this.setPreviewSize);
-  }
-
-  onImageReceiver(pixelMap: PixelMap) {
-    this.previewImage = pixelMap;
   }
 
   // [Start initSleepTimer]
@@ -236,7 +224,7 @@ struct Index {
   syncButtonSettings() {
     this.previewManager.setFrameRate(this.previewVM.currentRate, this.previewVM.currentRate);
     this.photoManager.enableMovingPhoto(this.isLivePhoto);
-    this.photoManager.setPhotoOutputCallback(this.isSinglePhoto);
+    this.photoManager.setPhotoOutputCallback();
   }
 
   flashBlackAnim() {
@@ -434,31 +422,6 @@ struct Index {
       })
   }
 
-  @Builder
-  previewImageButton() {
-    SymbolGlyph(this.isPreviewImageVisible ? $r('sys.symbol.eye') : $r('sys.symbol.eye_slash'))
-      .funcButtonStyle()
-      .onClick(() => {
-        this.isPreviewImageVisible = !this.isPreviewImageVisible;
-        const message =
-          this.isPreviewImageVisible ? $r('app.string.preview_image_open') : $r('app.string.preview_image_close');
-        showToast(this.getUIContext(), message);
-      })
-  }
-
-  getPreviewImageWidth() {
-    let displayDefault: display.Display | null = null;
-    try {
-      displayDefault = display.getDefaultDisplaySync();
-    } catch (exception) {
-      Logger.error(TAG, `getDefaultDisplaySync failed, code is ${exception.code}, message is ${exception.message}`);
-    }
-    const rotation = (displayDefault?.rotation ?? 0) * 90;
-    const ratio = this.previewVM.getPreviewRatio();
-    const displayRatio = rotation === 90 || rotation === 270 ? 1 / ratio : ratio;
-    return this.PreviewImageHeight / displayRatio;
-  }
-
   getExposurePosition(): Edges {
     const focusBoxLeft = this.focusBoxPosition.left as number;
     const focusBoxTop = this.focusBoxPosition.top as number;
@@ -476,26 +439,11 @@ struct Index {
   }
 
   @Builder
-  previewImageView() {
-    Image(this.previewImage)
-      .width(this.getPreviewImageWidth())
-      .height(this.PreviewImageHeight)
-      .alignRules({
-        bottom: { anchor: '__container__', align: VerticalAlign.Bottom },
-        left: { anchor: '__container__', align: HorizontalAlign.Start }
-      })
-      .margin({
-        bottom: 10,
-        left: 10
-      })
-  }
-
-  @Builder
   funcButtonsView() {
     Column({ space: 24 }) {
       this.gridLineButton()
       this.levelButton()
-      this.previewImageButton()
+      // Removed dual-channel preview button - only single-channel preview supported
     }
     .alignRules({
       top: { anchor: 'settingButtonsView', align: VerticalAlign.Bottom },
@@ -510,9 +458,6 @@ struct Index {
   build() {
     RelativeContainer() {
       this.preview()
-      if (this.isPreviewImageVisible) {
-        this.previewImageView()
-      }
       this.funcButtonsView()
       SettingButtonsView({
         previewVM: this.previewVM,
@@ -521,7 +466,6 @@ struct Index {
         photoManager: this.photoManager,
         videoManager: this.videoManager,
         photoDelayTime: this.photoDelayTime,
-        isSinglePhoto: this.isSinglePhoto,
         isLivePhoto: this.isLivePhoto,
         isStabilizationEnabled: this.isStabilizationEnabled
       })

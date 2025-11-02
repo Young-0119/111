@@ -55,7 +55,7 @@ export class PhotoManager implements OutputManager {
     cameraPhotoOutput = this.createPhotoOutput(config.cameraManager, config.device, config.profile);
     if (cameraPhotoOutput) {
       this.output = cameraPhotoOutput;
-      this.setPhotoOutputCallback(this.isSingle);
+      this.setPhotoOutputCallback();
     }
     return cameraPhotoOutput;
   }
@@ -93,61 +93,6 @@ export class PhotoManager implements OutputManager {
   }
 
   // [End create_photo_output]
-
-  // [Start set_photo_cb_double]
-  // Save camera photo
-  async mediaLibSavePhoto(photoAsset: photoAccessHelper.PhotoAsset,
-    phAccessHelper: photoAccessHelper.PhotoAccessHelper): Promise<void> {
-    try {
-      let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
-        new photoAccessHelper.MediaAssetChangeRequest(photoAsset);
-      assetChangeRequest.saveCameraPhoto();
-      await phAccessHelper.applyChanges(assetChangeRequest);
-      phAccessHelper.release();
-    } catch (error) {
-      Logger.error(TAG_LOG, `apply saveCameraPhoto failed with error: ${error.code}, ${error.message}`);
-    }
-  }
-
-  async mediaLibRequestBuffer(photoAsset: photoAccessHelper.PhotoAsset, context: Context,
-    callback: (pixelMap: image.PixelMap, url: string) => void) {
-    class MediaDataHandler implements photoAccessHelper.MediaAssetDataHandler<ArrayBuffer> {
-      onDataPrepared(data: ArrayBuffer) {
-        if (data === undefined) {
-          Logger.error(TAG_LOG, 'Error occurred when preparing data');
-          return;
-        }
-        let imageSource = image.createImageSource(data);
-        imageSource.createPixelMap().then((pixelMap: image.PixelMap) => {
-          callback(pixelMap, photoAsset.uri);
-        }).catch((err: BusinessError) => {
-          Logger.error(TAG_LOG, `createPixelMap err:${err.code}`);
-        })
-      }
-    }
-
-    let requestOptions: photoAccessHelper.RequestOptions = {
-      deliveryMode: photoAccessHelper.DeliveryMode.FAST_MODE,
-    }
-    const handler = new MediaDataHandler();
-    try {
-      await photoAccessHelper.MediaAssetManager.requestImageData(context, photoAsset, requestOptions, handler);
-    } catch (exception) {
-      Logger.error(TAG_LOG, `requestImageData failed, code is ${exception.code}, message is ${exception.message}`);
-    }
-  }
-
-  public setPhotoOutputCbDouble(cameraPhotoOutput: camera.PhotoOutput) {
-    cameraPhotoOutput.on('photoAssetAvailable',
-      async (_err: BusinessError, photoAsset: photoAccessHelper.PhotoAsset): Promise<void> => {
-        let accessHelper: photoAccessHelper.PhotoAccessHelper =
-          photoAccessHelper.getPhotoAccessHelper(this.context);
-        this.mediaLibSavePhoto(photoAsset, accessHelper);
-        this.mediaLibRequestBuffer(photoAsset, this.context, this.callback);
-      });
-  }
-
-  // [End set_photo_cb_double]
 
   // [Start set_photo_cb_single]
   // Set photo callback single
@@ -203,17 +148,13 @@ export class PhotoManager implements OutputManager {
 
   // [End save_photo_single]
 
-  setPhotoOutputCallback(isSingle: boolean) {
+  setPhotoOutputCallback() {
     if (!this.output) {
       return;
     }
-    if (isSingle) {
-      this.output?.off('photoAssetAvailable');
-      this.setPhotoOutputCbSingle(this.output, this.context);
-    } else {
-      this.output?.off('photoAvailable');
-      this.setPhotoOutputCbDouble(this.output);
-    }
+    // Only support single-stage photo mode
+    this.output?.off('photoAssetAvailable');
+    this.setPhotoOutputCbSingle(this.output, this.context);
   }
 
   preparePhoto(session: camera.Session, zoomRatio?: number, flashMode?: camera.FlashMode,
