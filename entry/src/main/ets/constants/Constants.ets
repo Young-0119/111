@@ -24,6 +24,7 @@ class CameraConstant {
     'ohos.permission.MEDIA_LOCATION',
     'ohos.permission.WRITE_IMAGEVIDEO',
     'ohos.permission.READ_IMAGEVIDEO',
+    'ohos.permission.LOCATION',  // 精确位置权限
     'ohos.permission.APPROXIMATELY_LOCATION'
   ];
 }

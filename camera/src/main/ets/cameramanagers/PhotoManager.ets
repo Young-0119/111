@@ -24,6 +24,10 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
+import { WatermarkProcessor, WatermarkProcessConfig, WatermarkInfo } from '../watermark/WatermarkProcessor';
+import { HighPerformanceWatermarkProcessor } from '../watermark/HighPerformanceWatermarkProcessor';
+import { RobustWatermarkProcessor } from '../watermark/RobustWatermarkProcessor';
+import { OptimizedImageProcessor } from '../watermark/OptimizedImageProcessor';
 
 const TAG_LOG = 'PhotoManager';
 
@@ -33,6 +37,16 @@ export class PhotoManager implements OutputManager {
   context: Context;
   isSingle: boolean = false;
   location: geoLocationManager.Location | null = null;
+  
+  // 水印处理相关属性
+  private watermarkProcessor?: WatermarkProcessor;
+  private highPerformanceProcessor?: HighPerformanceWatermarkProcessor;
+  private robustProcessor: RobustWatermarkProcessor = RobustWatermarkProcessor.getInstance();
+  private optimizedProcessor?: OptimizedImageProcessor;
+  private watermarkConfig: WatermarkProcessConfig;
+  private enableWatermark: boolean = true;
+  private useHighPerformance: boolean = true;
+  
   private callback: (pixelMap: image.PixelMap, url: string) => void = () => {
   };
 
@@ -40,6 +54,22 @@ export class PhotoManager implements OutputManager {
     this.context = context;
     this.isActive = isActive;
     this.isSingle = isSingle;
+    
+    // 初始化水印配置
+    this.watermarkConfig = {
+      enabled: true,
+      quality: 90,
+      position: 'top-left',
+      opacity: 0.9,
+      scale: 1.0,
+      rotation: 0
+    };
+    
+    // 初始化水印处理器
+    this.initializeWatermarkProcessors();
+    
+    // 初始化位置信息
+    this.initializeLocation();
   }
 
   setIsActive(isActive: boolean) {
@@ -48,6 +78,57 @@ export class PhotoManager implements OutputManager {
 
   setCallback(callback: (pixelMap: image.PixelMap, url: string) => void) {
     this.callback = callback;
+  }
+
+  /**
+   * 初始化水印处理器
+   */
+  private initializeWatermarkProcessors(): void {
+    try {
+      // 优先使用稳定的水印处理器
+      this.robustProcessor = RobustWatermarkProcessor.getInstance();
+      Logger.info(TAG_LOG, '稳定水印处理器初始化成功');
+      
+      // 保留原有处理器作为备用
+      this.watermarkProcessor = new WatermarkProcessor(this.context, this.watermarkConfig);
+      this.highPerformanceProcessor = new HighPerformanceWatermarkProcessor(this.context, this.watermarkConfig);
+      this.optimizedProcessor = new OptimizedImageProcessor(this.context);
+      Logger.info(TAG_LOG, '水印处理器初始化完成');
+    } catch (error) {
+      Logger.error(TAG_LOG, `水印处理器初始化失败: ${JSON.stringify(error)}`);
+    }
+  }
+
+  /**
+   * 设置水印配置
+   */
+  setWatermarkConfig(config: Partial<WatermarkProcessConfig>): void {
+    // 手动合并配置对象
+    const newConfig: WatermarkProcessConfig = {
+      enabled: config.enabled !== undefined ? config.enabled : this.watermarkConfig.enabled,
+      quality: config.quality !== undefined ? config.quality : this.watermarkConfig.quality,
+      position: config.position !== undefined ? config.position : this.watermarkConfig.position,
+      opacity: config.opacity !== undefined ? config.opacity : this.watermarkConfig.opacity,
+      scale: config.scale !== undefined ? config.scale : this.watermarkConfig.scale,
+      rotation: config.rotation !== undefined ? config.rotation : this.watermarkConfig.rotation
+    };
+    this.watermarkConfig = newConfig;
+    // 重新初始化处理器
+    this.initializeWatermarkProcessors();
+  }
+
+  /**
+   * 启用/禁用水印
+   */
+  setWatermarkEnabled(enabled: boolean): void {
+    this.enableWatermark = enabled;
+  }
+
+  /**
+   * 设置是否使用高性能模式
+   */
+  setHighPerformanceMode(enabled: boolean): void {
+    this.useHighPerformance = enabled;
   }
 
   async createOutput(config: CreateOutputConfig) {
@@ -95,18 +176,176 @@ export class PhotoManager implements OutputManager {
   // [End create_photo_output]
 
   // [Start set_photo_cb_single]
-  // Set photo callback single
+  // Set photo callback single with watermark processing
   setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
-    photoOutput.on('photoAvailable', (errCode: BusinessError, photo: camera.Photo): void => {
+    photoOutput.on('photoAvailable', async (errCode: BusinessError, photo: camera.Photo): Promise<void> => {
       if (errCode || photo === undefined) {
         Logger.error(TAG_LOG, 'getPhoto failed');
         return;
       }
-      this.mediaLibSavePhotoSingle(context, photo.main)
+      
+      // 检查是否启用水印
+      if (this.enableWatermark && this.watermarkConfig.enabled) {
+        await this.processPhotoWithWatermark(context, photo);
+      } else {
+        // 不使用水印，直接保存
+        this.mediaLibSavePhotoSingle(context, photo.main);
+      }
     });
   }
 
   // [End set_photo_cb_single]
+
+  /**
+   * 处理带水印的照片
+   */
+  private async processPhotoWithWatermark(context: Context, photo: camera.Photo): Promise<void> {
+    try {
+      Logger.info(TAG_LOG, '开始水印处理流程');
+      
+      // 获取水印信息
+      const watermarkInfo: WatermarkInfo = await this.getWatermarkInfo();
+      
+      let savedUri: string;
+      let processedPixelMap: image.PixelMap;
+      
+      // 优先使用稳定的水印处理器
+      try {
+        Logger.info(TAG_LOG, '使用稳定水印处理器');
+        processedPixelMap = await this.robustProcessor.processWatermark(photo, watermarkInfo);
+        
+        // 保存处理后的图像
+        savedUri = await this.savePixelMapToGallery(processedPixelMap, context);
+        Logger.info(TAG_LOG, `稳定水印处理成功，保存路径: ${savedUri}`);
+        
+      } catch (robustError) {
+        Logger.warn(TAG_LOG, `稳定水印处理失败，尝试降级方案: ${robustError instanceof Error ? robustError.message : String(robustError)}`);
+        
+        // 降级方案1：使用高性能处理器
+        if (this.useHighPerformance && this.highPerformanceProcessor) {
+          Logger.info(TAG_LOG, '使用高性能水印处理器作为降级方案');
+          savedUri = await this.highPerformanceProcessor.processWatermarkHighPerformance(photo, watermarkInfo);
+        } else if (this.optimizedProcessor) {
+          // 降级方案2：使用内存优化处理器
+          Logger.info(TAG_LOG, '使用内存优化处理器作为降级方案');
+          savedUri = await this.optimizedProcessor.processWithMemoryConstraint(photo, watermarkInfo);
+        } else if (this.watermarkProcessor) {
+          // 降级方案3：使用标准处理器
+          Logger.info(TAG_LOG, '使用标准水印处理器作为降级方案');
+          savedUri = await this.watermarkProcessor.processWatermark(photo, watermarkInfo);
+        } else {
+          throw new Error('所有水印处理器都不可用');
+        }
+        
+        // 创建PixelMap用于回调
+        processedPixelMap = await this.createPixelMapFromPhoto(photo);
+      }
+      
+      // 调用回调函数
+      this.callback(processedPixelMap, savedUri);
+      
+      Logger.info(TAG_LOG, `水印处理完成，保存路径: ${savedUri}`);
+      
+    } catch (error) {
+      // 改进错误日志记录，提供更详细的错误信息
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      const errorStack = error instanceof Error ? error.stack : '';
+      Logger.error(TAG_LOG, `水印处理失败: ${errorMessage}`);
+      if (errorStack) {
+        Logger.error(TAG_LOG, `错误堆栈: ${errorStack}`);
+      }
+      
+      // 降级处理：直接保存原图
+      this.mediaLibSavePhotoSingle(context, photo.main);
+    }
+  }
+
+  /**
+   * 获取水印信息
+   */
+  private async getWatermarkInfo(): Promise<WatermarkInfo> {
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    
+    return {
+      timestamp,
+      weather: await this.getWeatherInfo(),
+      location: await this.getLocationInfo(),
+      altitude: await this.getAltitudeInfo(),
+      direction: await this.getDirectionInfo(),
+      longitude: this.location?.longitude?.toString() || '获取中...',
+      latitude: this.location?.latitude?.toString() || '获取中...',
+      organization: '应急管理部门'
+    };
+  }
+
+  /**
+   * 从Photo对象创建PixelMap
+   */
+  private async createPixelMapFromPhoto(photo: camera.Photo): Promise<image.PixelMap> {
+    const imageObj: image.Image = photo.main;
+    
+    const component: image.Component = await new Promise<image.Component>((resolve, reject) => {
+      imageObj.getComponent(image.ComponentType.JPEG, (err, comp) => {
+        if (err || !comp) {
+          reject(err || new Error('Failed to get image component'));
+        } else {
+          resolve(comp);
+        }
+      });
+    });
+    
+    const imageSource: image.ImageSource = image.createImageSource(component.byteBuffer);
+    
+    try {
+      const pixelMap: image.PixelMap = await imageSource.createPixelMap({
+        desiredSize: { width: 0, height: 0 },
+        desiredRegion: { size: { width: 0, height: 0 }, x: 0, y: 0 },
+        desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
+        editable: false
+      });
+      
+      return pixelMap;
+    } finally {
+      imageSource.release();
+    }
+  }
+
+  /**
+   * 获取天气信息
+   */
+  private async getWeatherInfo(): Promise<string> {
+    // 实际实现中应该调用天气API
+    return '晴朗';
+  }
+
+  /**
+   * 获取位置信息
+   */
+  private async getLocationInfo(): Promise<string> {
+    if (this.location) {
+      return `${this.location.latitude?.toFixed(6)}, ${this.location.longitude?.toFixed(6)}`;
+    }
+    return '定位中...';
+  }
+
+  /**
+   * 获取海拔信息
+   */
+  private async getAltitudeInfo(): Promise<string> {
+    if (this.location && this.location.altitude) {
+      return `${this.location.altitude.toFixed(1)}m`;
+    }
+    return '计算中...';
+  }
+
+  /**
+   * 获取方向信息
+   */
+  private async getDirectionInfo(): Promise<string> {
+    // 实际实现中应该使用指南针传感器
+    return '北偏东30°';
+  }
 
   // [Start save_photo_single]
   // Save photo single
@@ -144,6 +383,53 @@ export class PhotoManager implements OutputManager {
           `mediaLibSavePhotoSingle failed, code is ${exception.code}, message is ${exception.message}`);
       }
     });
+  }
+
+  /**
+   * 保存PixelMap到相册
+   */
+  async savePixelMapToGallery(pixelMap: image.PixelMap, context: Context): Promise<string> {
+    try {
+      // 将PixelMap转换为JPEG格式的ArrayBuffer
+      const imagePackerApi = image.createImagePacker();
+      const packOpts: image.PackingOption = {
+        format: 'image/jpeg',
+        quality: 95
+      };
+      
+      const buffer: ArrayBuffer = await imagePackerApi.packing(pixelMap, packOpts);
+      imagePackerApi.release();
+      
+      if (!buffer) {
+        throw new Error('PixelMap转换为buffer失败');
+      }
+      
+      // 保存到相册
+      const photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
+      const extension: string = 'jpg';
+      const options: photoAccessHelper.CreateOptions = {
+        title: `watermark_photo_${Date.now()}`
+      };
+      
+      const assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
+        photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
+      assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer);
+      assetChangeRequest.saveCameraPhoto();
+      
+      const accessHelper: photoAccessHelper.PhotoAccessHelper =
+        photoAccessHelper.getPhotoAccessHelper(context);
+      await accessHelper.applyChanges(assetChangeRequest);
+      
+      const savedUri = assetChangeRequest.getAsset().uri;
+      accessHelper.release();
+      
+      Logger.info(TAG_LOG, `PixelMap保存成功，URI: ${savedUri}`);
+      return savedUri;
+      
+    } catch (error) {
+      Logger.error(TAG_LOG, `保存PixelMap失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('保存处理后的图像失败');
+    }
   }
 
   // [End save_photo_single]
@@ -368,19 +654,62 @@ export class PhotoManager implements OutputManager {
   // [End enable_moving_photo]
 
   // [Start photo_release]
-  // Release photo
+  // Release photo and watermark processors
   async release() {
     try {
       await this.output?.release();
     } catch (exception) {
       Logger.error(TAG_LOG, `release failed, code is ${exception.code}, message is ${exception.message}`);
     }
+    
+    // 清理水印处理器资源
+    try {
+      if (this.highPerformanceProcessor) {
+        this.highPerformanceProcessor.destroy();
+        this.highPerformanceProcessor = undefined;
+      }
+      this.watermarkProcessor = undefined;
+      this.optimizedProcessor = undefined;
+      Logger.info(TAG_LOG, '水印处理器资源已清理');
+    } catch (error) {
+      Logger.error(TAG_LOG, `清理水印处理器失败: ${JSON.stringify(error)}`);
+    }
+    
     if (this.isSingle) {
       this.output?.off('photoAvailable');
     } else {
       this.output?.off('photoAssetAvailable');
     }
     this.output = undefined;
+  }
+
+  /**
+   * 初始化位置信息
+   */
+  private async initializeLocation(): Promise<void> {
+    try {
+      // 请求单次位置信息
+      const requestInfo: geoLocationManager.SingleLocationRequest = {
+        locatingTimeoutMs: 10000,  // 10秒超时
+        locatingPriority: geoLocationManager.LocatingPriority.PRIORITY_ACCURACY
+      };
+      
+      this.location = await geoLocationManager.getCurrentLocation(requestInfo);
+      Logger.info(TAG_LOG, `位置信息获取成功: ${this.location.latitude}, ${this.location.longitude}`);
+    } catch (error) {
+      Logger.error(TAG_LOG, `位置信息获取失败: ${JSON.stringify(error)}`);
+      // 设置默认位置信息，避免水印处理失败
+      this.location = {
+        latitude: 0,
+        longitude: 0,
+        altitude: 0,
+        accuracy: 0,
+        speed: 0,
+        timeStamp: Date.now(),
+        direction: 0,
+        timeSinceBoot: 0
+      } as geoLocationManager.Location;
+    }
   }
 
   // [End photo_release]
