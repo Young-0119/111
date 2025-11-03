@@ -24,10 +24,7 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
-import { WatermarkProcessor, WatermarkProcessConfig, WatermarkInfo } from '../watermark/WatermarkProcessor';
-import { HighPerformanceWatermarkProcessor } from '../watermark/HighPerformanceWatermarkProcessor';
-import { RobustWatermarkProcessor } from '../watermark/RobustWatermarkProcessor';
-import { OptimizedImageProcessor } from '../watermark/OptimizedImageProcessor';
+import { RobustWatermarkProcessor, WatermarkProcessConfig, WatermarkInfo } from '../watermark/RobustWatermarkProcessor';
 
 const TAG_LOG = 'PhotoManager';
 
@@ -39,13 +36,9 @@ export class PhotoManager implements OutputManager {
   location: geoLocationManager.Location | null = null;
   
   // 水印处理相关属性
-  private watermarkProcessor?: WatermarkProcessor;
-  private highPerformanceProcessor?: HighPerformanceWatermarkProcessor;
   private robustProcessor: RobustWatermarkProcessor = RobustWatermarkProcessor.getInstance();
-  private optimizedProcessor?: OptimizedImageProcessor;
   private watermarkConfig: WatermarkProcessConfig;
   private enableWatermark: boolean = true;
-  private useHighPerformance: boolean = true;
   
   private callback: (pixelMap: image.PixelMap, url: string) => void = () => {
   };
@@ -85,15 +78,9 @@ export class PhotoManager implements OutputManager {
    */
   private initializeWatermarkProcessors(): void {
     try {
-      // 优先使用稳定的水印处理器
+      // 使用稳定的水印处理器
       this.robustProcessor = RobustWatermarkProcessor.getInstance();
       Logger.info(TAG_LOG, '稳定水印处理器初始化成功');
-      
-      // 保留原有处理器作为备用
-      this.watermarkProcessor = new WatermarkProcessor(this.context, this.watermarkConfig);
-      this.highPerformanceProcessor = new HighPerformanceWatermarkProcessor(this.context, this.watermarkConfig);
-      this.optimizedProcessor = new OptimizedImageProcessor(this.context);
-      Logger.info(TAG_LOG, '水印处理器初始化完成');
     } catch (error) {
       Logger.error(TAG_LOG, `水印处理器初始化失败: ${JSON.stringify(error)}`);
     }
@@ -125,10 +112,11 @@ export class PhotoManager implements OutputManager {
   }
 
   /**
-   * 设置是否使用高性能模式
+   * 设置是否使用高性能模式（已废弃，保留兼容性）
    */
   setHighPerformanceMode(enabled: boolean): void {
-    this.useHighPerformance = enabled;
+    // 方法保留用于兼容性，实际不执行任何操作
+    Logger.info(TAG_LOG, `高性能模式设置已废弃: ${enabled}`);
   }
 
   async createOutput(config: CreateOutputConfig) {
@@ -153,17 +141,45 @@ export class PhotoManager implements OutputManager {
       try {
         const displayRatio = profile.size.width / profile.size.height;
         const profileWidth = profile.size.width;
+        
+        // 优先选择2160×2880px分辨率（1080×1440px的2倍）
+        const targetWidth = 2160;
+        const targetHeight = 2880;
+        
         const photoProfile = photoProfilesArray
-          .sort((a, b) => Math.abs(a.size.width - profileWidth) - Math.abs(b.size.width - profileWidth))
-          .find(pf => {
+          .filter(pf => {
             const pfDisplayRatio = pf.size.width / pf.size.height;
             return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
               pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
-          });
+          })
+          .sort((a, b) => {
+            // 首先优先选择目标分辨率2160×2880px
+            const aIsTarget = (a.size.width === targetWidth && a.size.height === targetHeight);
+            const bIsTarget = (b.size.width === targetWidth && b.size.height === targetHeight);
+            
+            if (aIsTarget && !bIsTarget) return -1;
+            if (!aIsTarget && bIsTarget) return 1;
+            
+            // 如果都不是目标分辨率，则按与目标分辨率的距离排序
+            const aDistance = Math.abs(a.size.width - targetWidth) + Math.abs(a.size.height - targetHeight);
+            const bDistance = Math.abs(b.size.width - targetWidth) + Math.abs(b.size.height - targetHeight);
+            
+            if (aDistance !== bDistance) {
+              return aDistance - bDistance; // 升序，距离越小越优先
+            }
+            
+            // 距离相同时，按总像素数排序（优先选择高分辨率）
+            const aPixels = a.size.width * a.size.height;
+            const bPixels = b.size.width * b.size.height;
+            return bPixels - aPixels; // 降序，高分辨率优先
+          })[0]; // 取第一个（最佳匹配）
+          
         if (!photoProfile) {
           Logger.error(TAG_LOG, 'Failed to get photo profile');
           return;
         }
+        
+        Logger.info(TAG_LOG, `选择照片配置: ${photoProfile.size.width}x${photoProfile.size.height}, 格式: ${photoProfile.format}`);
         cameraPhotoOutput = cameraManager?.createPhotoOutput(photoProfile);
       } catch (error) {
         Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(error)}`);
@@ -219,26 +235,10 @@ export class PhotoManager implements OutputManager {
         Logger.info(TAG_LOG, `稳定水印处理成功，保存路径: ${savedUri}`);
         
       } catch (robustError) {
-        Logger.warn(TAG_LOG, `稳定水印处理失败，尝试降级方案: ${robustError instanceof Error ? robustError.message : String(robustError)}`);
+        Logger.warn(TAG_LOG, `稳定水印处理失败: ${robustError instanceof Error ? robustError.message : String(robustError)}`);
         
-        // 降级方案1：使用高性能处理器
-        if (this.useHighPerformance && this.highPerformanceProcessor) {
-          Logger.info(TAG_LOG, '使用高性能水印处理器作为降级方案');
-          savedUri = await this.highPerformanceProcessor.processWatermarkHighPerformance(photo, watermarkInfo);
-        } else if (this.optimizedProcessor) {
-          // 降级方案2：使用内存优化处理器
-          Logger.info(TAG_LOG, '使用内存优化处理器作为降级方案');
-          savedUri = await this.optimizedProcessor.processWithMemoryConstraint(photo, watermarkInfo);
-        } else if (this.watermarkProcessor) {
-          // 降级方案3：使用标准处理器
-          Logger.info(TAG_LOG, '使用标准水印处理器作为降级方案');
-          savedUri = await this.watermarkProcessor.processWatermark(photo, watermarkInfo);
-        } else {
-          throw new Error('所有水印处理器都不可用');
-        }
-        
-        // 创建PixelMap用于回调
-        processedPixelMap = await this.createPixelMapFromPhoto(photo);
+        // 降级处理：直接保存原图
+        throw new Error('水印处理器不可用，保存原图');
       }
       
       // 调用回调函数
@@ -392,9 +392,12 @@ export class PhotoManager implements OutputManager {
     try {
       // 将PixelMap转换为JPEG格式的ArrayBuffer
       const imagePackerApi = image.createImagePacker();
+      
+      // 优化压缩参数以提升图像质量
       const packOpts: image.PackingOption = {
         format: 'image/jpeg',
-        quality: 95
+        quality: 98, // 提升质量到98%，确保高质量输出
+        desiredDynamicRange: image.PackingDynamicRange.AUTO // 自动HDR处理
       };
       
       const buffer: ArrayBuffer = await imagePackerApi.packing(pixelMap, packOpts);
@@ -403,6 +406,8 @@ export class PhotoManager implements OutputManager {
       if (!buffer) {
         throw new Error('PixelMap转换为buffer失败');
       }
+      
+      Logger.info(TAG_LOG, `图像编码完成，缓冲区大小: ${buffer.byteLength} bytes`);
       
       // 保存到相册
       const photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
@@ -664,12 +669,7 @@ export class PhotoManager implements OutputManager {
     
     // 清理水印处理器资源
     try {
-      if (this.highPerformanceProcessor) {
-        this.highPerformanceProcessor.destroy();
-        this.highPerformanceProcessor = undefined;
-      }
-      this.watermarkProcessor = undefined;
-      this.optimizedProcessor = undefined;
+      // RobustWatermarkProcessor是单例，无需显式销毁
       Logger.info(TAG_LOG, '水印处理器资源已清理');
     } catch (error) {
       Logger.error(TAG_LOG, `清理水印处理器失败: ${JSON.stringify(error)}`);

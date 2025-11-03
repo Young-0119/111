@@ -357,7 +357,9 @@ struct Index {
       // 水印组件
       if (this.isWatermarkVisible) {
         WatermarkOverlay({
-          watermarkInfo: this.watermarkInfo
+          watermarkInfo: this.watermarkInfo,
+          previewWidth: this.previewVM.getPreviewWidth(),
+          previewHeight: this.previewVM.getPreviewHeight()
         })
       }
     }

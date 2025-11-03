@@ -30,21 +30,12 @@ export interface WatermarkInfo {
 
 @Component
 export struct WatermarkOverlay {
-  @Prop watermarkInfo: WatermarkInfo = {
-    timestamp: this.getCurrentTimestamp(),
-    weather: '晴朗',
-    location: '北京市朝阳区',
-    altitude: '50米',
-    direction: '北偏东30度',
-    longitude: '116.4074°',
-    latitude: '39.9042°',
-    organization: '消防救援支队'
-  };
-  
-  @State private currentOrganization: string = '';
-  @State private showEditDialog: boolean = false;
-  @State private editingOrganization: string = '';
-  
+  @ObjectLink watermarkInfo: WatermarkInfo;
+  @Prop previewWidth: number = 0;  // 预览区域宽度
+  @Prop previewHeight: number = 0; // 预览区域高度
+  @State currentOrganization: string = '';
+  @State showEditDialog: boolean = false;
+  @State editingOrganization: string = '';
   private PREF_KEY_ORGANIZATION = 'organization_name';
   
   aboutToAppear() {
@@ -159,6 +150,15 @@ export struct WatermarkOverlay {
   }
 
   
+  // 计算水印区域尺寸为预览区的1/3
+  private getWatermarkWidth(): number {
+    return this.previewWidth > 0 ? Math.floor(this.previewWidth / 2) : 360;
+  }
+  
+  private getWatermarkHeight(): number {
+    return this.previewHeight > 0 ? Math.floor(this.previewHeight * 0.4) : 480;
+  }
+
   build() {
     // 使用Stack容器实现绝对定位，避免全屏覆盖
     Stack() {
@@ -172,14 +172,15 @@ export struct WatermarkOverlay {
             .margin({ right: 12 })
 
           Text($r('app.string.watermark_title'))
-            .fontSize(14)
+            .fontSize(12)
             .fontColor('#FFFFFF')
             .fontWeight(FontWeight.Bold)
         }
         .alignItems(VerticalAlign.Center)
         .backgroundColor('rgba(0, 87, 217, 0.5)')
         .width('100%')
-        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+        .padding({ left: 3, right: 3, top: 3, bottom: 3 })
+        .margin({ bottom: 3 })
 
         // 第一行：拍摄时间
         Text() {
@@ -187,9 +188,9 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.timestamp)
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#000000')
-          .margin({ bottom: 4 })
+          .margin({ left: 3, bottom: 3 })
 
         // 第二行：天气信息
         Text() {
@@ -197,9 +198,9 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.weather || '获取中...')
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#000000')
-          .margin({ bottom: 4 })
+          .margin({ left: 3, bottom: 3 })
 
         // 第三行：地点信息
         Text() {
@@ -207,9 +208,9 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.location || '定位中...')
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#000000')
-          .margin({ bottom: 4 })
+          .margin({ left: 3, bottom: 3 })
 
         // 第四行：海拔信息
         Text() {
@@ -217,9 +218,9 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.altitude || '计算中...')
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#000000')
-          .margin({ bottom: 4 })
+          .margin({ left: 3, bottom: 3 })
 
         // 第五行：方位角信息
         Text() {
@@ -227,9 +228,9 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.direction || '计算中...')
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#000000')
-          .margin({ bottom: 4 })
+          .margin({ left: 3, bottom: 3 })
 
         // 第六行：经度信息
         Text() {
@@ -237,9 +238,9 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.longitude || '计算中...')
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#000000')
-          .margin({ bottom: 4 })
+          .margin({ left: 3, bottom: 3 })
 
         // 第七行：纬度信息
         Text() {
@@ -247,9 +248,10 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.latitude || '获取中...')
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#000000')
-          .margin({ bottom: 4 })
+          .margin({ left: 3, bottom: 3 })
+          
 
         // 第八行：制作单位（支持双击编辑）
         Text() {
@@ -257,12 +259,12 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.currentOrganization || this.watermarkInfo.organization || '双击编辑')
         }
-          .fontSize(12)
+          .fontSize(10)
           .fontColor('#FFFFFF')
           .fontWeight(FontWeight.Medium)
           .backgroundColor('rgba(0, 87, 217, 0.5)')
           .width('100%')
-          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .padding({ left: 3, right: 3, top: 3, bottom: 3 })
           .hitTestBehavior(HitTestMode.Block)  // 单独设置此文本可以接收触摸事件
           .gesture(
             TapGesture({ count: 2 })
@@ -280,13 +282,8 @@ export struct WatermarkOverlay {
         offsetX: 0,
         offsetY: 3
       })
-      .width(220)  // 固定宽度，只占用实际需要的空间
-      .scale({ 
-        x: 0.8, 
-        y: 0.8,
-        centerX: '0%',
-        centerY: '100%'
-      }) // 以左下角为中心缩放到80%大小
+      .width(this.getWatermarkHeight())  // 动态设置宽度为预览区的1/2
+
       .rotate({ 
         angle: 90, 
         centerX: '0%', 
@@ -296,11 +293,11 @@ export struct WatermarkOverlay {
         x: 0, 
         y: '-100%'
       }) // 向上移动一个水印宽度的距离
-      .padding({ left: 4, right: 4, top: 4, bottom: 4 })  // 添加内边距
-      .borderRadius(8)  // 添加圆角
+      .padding({ left: 3, right: 3, top: 3, bottom: 3 })  // 添加内边距
+      .borderRadius(4)  // 添加圆角
     }
-    .width(400)  // Stack容器也使用固定宽度
-    .height(300) // 固定高度，足够容纳旋转后的水印
+    .width(this.getWatermarkHeight())  // 动态设置Stack容器宽度
+    .height(this.getWatermarkWidth()) // 动态设置高度
     .alignContent(Alignment.TopStart)  // 左上角对齐
     .position({ x: 2, y: 2 })  // 绝对定位到左上角
     .hitTestBehavior(HitTestMode.None)  // 关键：设置为不拦截触摸事件
