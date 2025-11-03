@@ -2,12 +2,20 @@
  * 稳定的水印处理器 - 使用HarmonyOS原生API
  * 彻底解决真机兼容性问题
  */
-import { camera } from '@kit.CameraKit';
 import { image } from '@kit.ImageKit';
+import { camera } from '@kit.CameraKit';
 import { Logger } from 'commons';
 import { WatermarkInfo, WatermarkProcessConfig, PerformanceMetrics } from './WatermarkProcessor';
 
-const TAG_LOG: string = 'RobustWatermarkProcessor';
+/**
+ * 水印信息项接口
+ */
+interface WatermarkInfoItem {
+  label: string;
+  value: string;
+}
+
+const TAG_LOG = 'RobustWatermarkProcessor';
 
 export class RobustWatermarkProcessor {
   private static instance: RobustWatermarkProcessor;
@@ -99,7 +107,7 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 创建水印PixelMap - 使用原生绘制API
+   * 创建水印PixelMap - 使用Canvas API实现清晰文字渲染
    */
   private async createWatermarkPixelMap(watermarkInfo: WatermarkInfo, originalPixelMap: image.PixelMap): Promise<image.PixelMap> {
     try {
@@ -108,24 +116,24 @@ export class RobustWatermarkProcessor {
       const width = imageInfo.size.width;
       const height = imageInfo.size.height;
 
-      // 创建水印PixelMap
-      const watermarkWidth = Math.min(width * 0.3, 300);
-      const watermarkHeight = Math.min(height * 0.1, 80);
+      // 优化水印尺寸计算 - 确保清晰可见但不过大
+      // 严格按照WatermarkOverlay.ets的UI规范设置尺寸
+      const watermarkWidth = 220;  // 固定宽度，与UI组件完全一致
+      const watermarkHeight = Math.max(300, height * 0.15); // 自适应高度，确保内容完整显示
 
-      const createOptions: image.InitializationOptions = {
-        size: { width: Math.floor(watermarkWidth), height: Math.floor(watermarkHeight) },
-        pixelFormat: image.PixelMapFormat.RGBA_8888,
-        alphaType: image.AlphaType.PREMUL
-      };
-
-      // 创建像素数据
-      const pixelBytes = Math.floor(watermarkWidth) * Math.floor(watermarkHeight) * 4;
-      const buffer = new ArrayBuffer(pixelBytes);
+      // 创建OffscreenCanvas进行高质量渲染
+      const offscreenCanvas = new OffscreenCanvas(Math.floor(watermarkWidth), Math.floor(watermarkHeight));
+      const context = offscreenCanvas.getContext('2d');
       
-      const watermarkPixelMap: image.PixelMap = await image.createPixelMap(buffer, createOptions);
+      if (!context) {
+        throw new Error('无法获取Canvas上下文');
+      }
 
-      // 使用原生API绘制水印内容
-      await this.drawWatermarkContent(watermarkPixelMap, watermarkInfo);
+      // 使用Canvas API绘制清晰的水印内容，严格按照UI规范
+      await this.drawWatermarkWithCanvas(context, watermarkInfo, Math.floor(watermarkWidth), Math.floor(watermarkHeight));
+
+      // 从Canvas获取PixelMap
+      const watermarkPixelMap: image.PixelMap = await context.getPixelMap(0, 0, Math.floor(watermarkWidth), Math.floor(watermarkHeight));
 
       return watermarkPixelMap;
     } catch (error) {
@@ -135,43 +143,138 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 绘制水印内容 - 使用像素级操作确保兼容性
+   * 使用Canvas绘制水印内容，严格按照WatermarkOverlay.ets的UI规范
    */
-  private async drawWatermarkContent(watermarkPixelMap: image.PixelMap, watermarkInfo: WatermarkInfo): Promise<void> {
-    try {
-      const imageInfo: image.ImageInfo = await watermarkPixelMap.getImageInfo();
-      const width = imageInfo.size.width;
-      const height = imageInfo.size.height;
-
-      // 创建简单的白色背景水印
-      const pixelBytes = width * height * 4; // RGBA
-      const buffer = new ArrayBuffer(pixelBytes);
-      const view = new Uint8Array(buffer);
-
-      // 填充白色背景 (RGBA: 255, 255, 255, 180)
-      for (let i = 0; i < pixelBytes; i += 4) {
-        view[i] = 255;     // R
-        view[i + 1] = 255; // G  
-        view[i + 2] = 255; // B
-        view[i + 3] = 180; // A (透明度)
-      }
-
-      // 创建PositionArea对象
-      const area: image.PositionArea = {
-        pixels: buffer,
-        offset: 0,
-        stride: width * 4,
-        region: { size: { height: height, width: width }, x: 0, y: 0 }
-      };
-
-      // 写入像素数据
-      await watermarkPixelMap.writePixels(area);
-      
-      Logger.info(TAG_LOG, `水印内容绘制完成: ${width}x${height}`);
-    } catch (error) {
-      Logger.error(TAG_LOG, `绘制水印内容失败: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error('无法绘制水印内容');
+  private async drawWatermarkWithCanvas(context: OffscreenCanvasRenderingContext2D, 
+                                       watermarkInfo: WatermarkInfo, 
+                                       canvasWidth: number, 
+                                       canvasHeight: number): Promise<void> {
+    // 清除画布
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
+    
+    // 设置高质量渲染
+    context.imageSmoothingEnabled = true;
+    context.textAlign = 'left';
+    context.textBaseline = 'top';
+    
+    // 保存初始状态
+    context.save();
+    
+    // 严格按照WatermarkOverlay.ets的UI规范：
+    // 1. 固定宽度220px（对应预览中的width(220)）
+    // 2. 完全匹配预览的布局、颜色、字体、间距
+    
+    const watermarkWidth = 220; // 与预览UI保持一致的固定宽度
+    
+    // 计算实际高度（根据内容动态计算）
+    const titleAreaHeight = 52; // 标题区域高度（图片46.48 + padding）
+    const infoLineHeight = 16;  // 信息行高度（12px字体 + 4px间距）
+    const infoCount = 7;        // 信息项数量
+    const orgAreaHeight = 24;   // 制作单位区域高度
+    const padding = 8;          // 上下内边距
+    
+    const watermarkHeight = titleAreaHeight + (infoCount * infoLineHeight) + orgAreaHeight + padding;
+    
+    // 应用变换：严格按照预览UI的变换顺序和参数
+    // 1. 移动到合适位置进行变换
+    context.translate(watermarkHeight * 0.8, 0); // 为旋转后预留空间
+    
+    // 2. 缩放80%（以左下角为中心）
+    context.scale(0.8, 0.8);
+    
+    // 3. 旋转90度（以左下角为轴心）
+    context.rotate(90 * Math.PI / 180);
+    
+    // 现在绘制水印内容（在变换后的坐标系中）
+    
+    // 1. 绘制主背景 - 严格按照预览UI规范
+    context.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 白色70%透明度
+    
+    // 绘制圆角矩形背景
+    const radius = 8;
+    this.drawRoundedRect(context, 0, 0, watermarkWidth, watermarkHeight, radius);
+    context.fill();
+    
+    // 2. 绘制标题区域背景 - 蓝色50%透明度
+    context.fillStyle = 'rgba(0, 87, 217, 0.5)';
+    this.drawRoundedRect(context, 0, 0, watermarkWidth, titleAreaHeight, radius, true, false);
+    context.fill();
+    
+    // 3. 绘制logo图片区域（用矩形代替，因为Canvas中加载图片较复杂）
+    const logoWidth = 60;
+    const logoHeight = 46.48;
+    const logoX = 12; // 左边距
+    const logoY = (titleAreaHeight - logoHeight) / 2; // 垂直居中
+    
+    // 绘制logo占位矩形（蓝色）
+    context.fillStyle = 'rgba(0, 87, 217, 0.8)';
+    context.fillRect(logoX, logoY, logoWidth, logoHeight);
+    
+    // 4. 绘制标题文字 - 14px白色粗体
+    context.fillStyle = '#FFFFFF';
+    context.font = 'bold 14px sans-serif'; // 使用通用字体确保兼容性
+    const titleText = '应急管理水印';
+    const titleX = logoX + logoWidth + 12; // logo右侧 + 间距
+    const titleY = (titleAreaHeight - 14) / 2; // 垂直居中
+    context.fillText(titleText, titleX, titleY);
+    
+    // 5. 绘制信息项 - 12px黑色文字，严格按照预览UI布局
+    context.fillStyle = '#000000';
+    context.font = '12px sans-serif';
+    
+    let yOffset = titleAreaHeight + 4; // 标题区域后开始
+    const leftPadding = 4; // 左边距4px，与预览UI一致
+    
+    const infoItems = this.getWatermarkInfoItems(watermarkInfo);
+    
+    // 绘制前7个信息项（不包括制作单位）
+    for (let i = 0; i < Math.min(infoItems.length - 1, 7); i++) {
+      const item = infoItems[i];
+      context.fillText(`${item.label}：${item.value}`, leftPadding, yOffset);
+      yOffset += infoLineHeight;
     }
+    
+    // 6. 绘制制作单位区域 - 蓝色50%透明度背景
+    const orgAreaY = watermarkHeight - orgAreaHeight;
+    context.beginPath();
+    context.roundRect(0, orgAreaY, watermarkWidth, orgAreaHeight, [0, 0, radius, radius]);
+    context.fillStyle = 'rgba(0, 87, 217, 0.5)';
+    context.fill();
+    
+    // 7. 绘制制作单位文字 - 12px白色中等字重
+    context.fillStyle = '#FFFFFF';
+    context.font = '500 12px sans-serif'; // 中等字重
+    const orgText = `制作单位：${watermarkInfo.organization || '应急管理部门'}`;
+    const orgY = orgAreaY + (orgAreaHeight - 12) / 2; // 垂直居中
+    context.fillText(orgText, leftPadding, orgY);
+    
+    // 恢复变换状态
+    context.restore();
+    
+    Logger.info(TAG_LOG, `严格按照预览UI规范绘制水印完成: ${watermarkWidth}x${watermarkHeight}，与预览保持完全一致`);
+  }
+
+  /**
+   * 获取水印信息项列表
+   */
+  private getWatermarkInfoItems(watermarkInfo: WatermarkInfo): Array<WatermarkInfoItem> {
+    return [
+      { label: '拍摄时间', value: watermarkInfo.timestamp },
+      { label: '天气信息', value: watermarkInfo.weather || '获取中...' },
+      { label: '地点信息', value: watermarkInfo.location || '定位中...' },
+      { label: '海拔信息', value: watermarkInfo.altitude || '计算中...' },
+      { label: '方位角', value: watermarkInfo.direction || '计算中...' },
+      { label: '经度', value: watermarkInfo.longitude || '计算中...' },
+      { label: '纬度', value: watermarkInfo.latitude || '获取中...' },
+      { label: '制作单位', value: watermarkInfo.organization || '应急管理部门' }
+    ];
+  }
+
+  /**
+   * 获取信息项数量
+   */
+  private getInfoItemsCount(watermarkInfo: WatermarkInfo): number {
+    return this.getWatermarkInfoItems(watermarkInfo).length;
   }
 
   /**
@@ -215,9 +318,10 @@ export class RobustWatermarkProcessor {
       
       await resultPixelMap.writePixels(resultArea);
 
-      // 计算水印位置 (右下角)
-      const watermarkX = originalInfo.size.width - watermarkInfo.size.width - 20;
-      const watermarkY = originalInfo.size.height - watermarkInfo.size.height - 20;
+      // 计算水印位置 - 严格按照WatermarkOverlay.ets的UI规范 (左上角，位置x:2, y:2)
+      // 考虑到旋转和缩放变换，需要调整实际位置
+      const watermarkX = 2; // 左上角x坐标
+      const watermarkY = 2; // 左上角y坐标
 
       // 使用原生API合成水印
       await this.blendWatermark(resultPixelMap, watermarkPixelMap, watermarkX, watermarkY);
@@ -333,5 +437,63 @@ export class RobustWatermarkProcessor {
       
       return metrics;
     }
+  }
+
+  /**
+   * 绘制圆角矩形路径
+   * @param context Canvas上下文
+   * @param x 起始x坐标
+   * @param y 起始y坐标
+   * @param width 宽度
+   * @param height 高度
+   * @param radius 圆角半径
+   * @param topRounded 是否圆角顶部（默认true）
+   * @param bottomRounded 是否圆角底部（默认true）
+   */
+  private drawRoundedRect(context: OffscreenCanvasRenderingContext2D, x: number, y: number, 
+                         width: number, height: number, radius: number, 
+                         topRounded: boolean = true, bottomRounded: boolean = true): void {
+    context.beginPath();
+    
+    // 左上角
+    if (topRounded) {
+      context.moveTo(x + radius, y);
+    } else {
+      context.moveTo(x, y);
+    }
+    
+    // 顶边和右上角
+    if (topRounded) {
+      context.lineTo(x + width - radius, y);
+      context.quadraticCurveTo(x + width, y, x + width, y + radius);
+    } else {
+      context.lineTo(x + width, y);
+    }
+    
+    // 右边和右下角
+    if (bottomRounded) {
+      context.lineTo(x + width, y + height - radius);
+      context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    } else {
+      context.lineTo(x + width, y + height);
+    }
+    
+    // 底边和左下角
+    if (bottomRounded) {
+      context.lineTo(x + radius, y + height);
+      context.quadraticCurveTo(x, y + height, x, y + height - radius);
+    } else {
+      context.lineTo(x, y + height);
+    }
+    
+    // 左边和左上角
+    if (topRounded) {
+      context.lineTo(x, y + radius);
+      context.quadraticCurveTo(x, y, x + radius, y);
+    } else {
+      context.lineTo(x, y);
+    }
+    
+    context.closePath();
   }
 }
