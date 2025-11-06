@@ -20,14 +20,6 @@ export interface WatermarkInfo {
   readonly organization?: string;
 }
 
-// 性能指标接口
-export interface PerformanceMetrics {
-  readonly startTime: number;
-  readonly endTime: number;
-  readonly memoryUsage: number;
-  readonly processingTime: number;
-}
-
 /**
  * 水印信息项接口
  */
@@ -532,41 +524,6 @@ export class RobustWatermarkProcessor {
     } catch (error) {
       Logger.error(TAG_LOG, `水印混合失败: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error('无法混合水印');
-    }
-  }
-
-  /**
-   * 性能监控
-   */
-  async measurePerformance(photo: camera.Photo, watermarkInfo: WatermarkInfo): Promise<PerformanceMetrics> {
-    const startTime: number = Date.now();
-    
-    try {
-      await this.processWatermark(photo, watermarkInfo);
-      
-      const endTime: number = Date.now();
-      const processingTime = endTime - startTime;
-      
-      const metrics: PerformanceMetrics = {
-        startTime,
-        endTime,
-        processingTime,
-        memoryUsage: 0 // 简化实现
-      };
-      
-      return metrics;
-    } catch (error) {
-      const endTime: number = Date.now();
-      const processingTime = endTime - startTime;
-      
-      const metrics: PerformanceMetrics = {
-        startTime,
-        endTime,
-        processingTime,
-        memoryUsage: 0
-      };
-      
-      return metrics;
     }
   }
 
