@@ -224,7 +224,7 @@ export class RobustWatermarkProcessor {
     context.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 白色70%透明度
     
     // 绘制主背景 - 不用圆角
-    this.drawRoundedRect(context, 0, 0, canvasWidth, canvasHeight, radius, true, true);
+    this.drawRoundedRect(context, 0, 0, canvasWidth, canvasHeight, radius);
     context.fill();
 
     // 2. 在左侧绘制蓝色制作单位背景区
@@ -233,7 +233,7 @@ export class RobustWatermarkProcessor {
     const orgX = MARGIN; // X坐标从MARGIN开始，确保左边距
     const orgHeight = canvasHeight - DOUBLE_MARGIN; // 高度自适应，上下各保持MARGIN像素边距
     const orgY = MARGIN; // Y坐标从MARGIN开始，确保上下边距
-    this.drawRoundedRect(context, orgX, orgY, orgWidth, orgHeight, radius, false, false);
+    this.drawRoundedRect(context, orgX, orgY, orgWidth, orgHeight, 0);
     context.fill();
     
     // 3. 在右侧绘制蓝色标题栏背景区 - 不用圆角
@@ -242,7 +242,7 @@ export class RobustWatermarkProcessor {
     const titleBarX = canvasWidth - titleBarWidth - MARGIN; // 从右侧开始，保持MARGIN像素右边距
     const titleBarHeight = canvasHeight - DOUBLE_MARGIN; // 高度自适应，上下各保持MARGIN像素边距
     const titleBarY = MARGIN; // Y坐标从MARGIN开始，确保上下边距
-    this.drawRoundedRect(context, titleBarX, titleBarY, titleBarWidth, titleBarHeight, radius, false, false);
+    this.drawRoundedRect(context, titleBarX, titleBarY, titleBarWidth, titleBarHeight, 0);
     context.fill();
 
     // 4. 在右侧蓝色标题栏区域绘制旋转90度的水印logo图片
@@ -528,58 +528,38 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 绘制圆角矩形路径
+   * 绘制圆角矩形路径 - 极简优化版（全圆角或全直角，最少API调用）
    * @param context Canvas上下文
    * @param x 起始x坐标
    * @param y 起始y坐标
    * @param width 宽度
    * @param height 高度
-   * @param radius 圆角半径
-   * @param topRounded 是否圆角顶部（默认true）
-   * @param bottomRounded 是否圆角底部（默认true）
+   * @param radius 圆角半径（0表示直角）
    */
   private drawRoundedRect(context: OffscreenCanvasRenderingContext2D, x: number, y: number, 
-                         width: number, height: number, radius: number, 
-                         topRounded: boolean = true, bottomRounded: boolean = true): void {
+                         width: number, height: number, radius: number): void {
     context.beginPath();
     
-    // 左上角
-    if (topRounded) {
-      context.moveTo(x + radius, y);
+    if (radius > 0) {
+      // 全圆角模式 - 最少API调用
+      const x1 = x;
+      const y1 = y;
+      const x2 = x + width;
+      const y2 = y + height;
+      const r = radius;
+      
+      context.moveTo(x1 + r, y1);
+      context.lineTo(x2 - r, y1);
+      context.quadraticCurveTo(x2, y1, x2, y1 + r);
+      context.lineTo(x2, y2 - r);
+      context.quadraticCurveTo(x2, y2, x2 - r, y2);
+      context.lineTo(x1 + r, y2);
+      context.quadraticCurveTo(x1, y2, x1, y2 - r);
+      context.lineTo(x1, y1 + r);
+      context.quadraticCurveTo(x1, y1, x1 + r, y1);
     } else {
-      context.moveTo(x, y);
-    }
-    
-    // 顶边和右上角
-    if (topRounded) {
-      context.lineTo(x + width - radius, y);
-      context.quadraticCurveTo(x + width, y, x + width, y + radius);
-    } else {
-      context.lineTo(x + width, y);
-    }
-    
-    // 右边和右下角
-    if (bottomRounded) {
-      context.lineTo(x + width, y + height - radius);
-      context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    } else {
-      context.lineTo(x + width, y + height);
-    }
-    
-    // 底边和左下角
-    if (bottomRounded) {
-      context.lineTo(x + radius, y + height);
-      context.quadraticCurveTo(x, y + height, x, y + height - radius);
-    } else {
-      context.lineTo(x, y + height);
-    }
-    
-    // 左边和左上角
-    if (topRounded) {
-      context.lineTo(x, y + radius);
-      context.quadraticCurveTo(x, y, x + radius, y);
-    } else {
-      context.lineTo(x, y);
+      // 无圆角 - 直接矩形（最快路径）
+      context.rect(x, y, width, height);
     }
     
     context.closePath();
