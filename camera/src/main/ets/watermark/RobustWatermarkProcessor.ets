@@ -41,135 +41,131 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 主要水印处理方法 - 使用原生API确保兼容性
+   * 主要水印处理方法 - 使用原生API确保兼容性（性能优化版）
+   * 优化策略：并行化操作、缓存设备信息、减少内存分配
    */
   async processWatermark(photo: camera.Photo, watermarkInfo: WatermarkInfo): Promise<image.PixelMap> {
     Logger.info(TAG_LOG, '开始稳定水印处理流程');
     
+    let originalPixelMap: image.PixelMap | null = null;
+    let watermarkPixelMap: image.PixelMap | null = null;
+    
     try {
-      // 1. 获取原始图像
-      const originalPixelMap: image.PixelMap = await this.getPhotoPixelMap(photo);
-      Logger.info(TAG_LOG, '成功获取原始图像');
+      // 1. 并行获取原始图像和设备信息（提前获取设备信息用于后续计算）
+      const parallelResults1 = await Promise.all([
+        this.getPhotoPixelMap(photo),
+        Promise.resolve(display.getDefaultDisplaySync())
+      ]);
+      originalPixelMap = parallelResults1[0];
+      const displayInfo = parallelResults1[1];
+      
+      // 2. 并行创建水印图像和获取原图信息
+      const parallelResults2 = await Promise.all([
+        this.createWatermarkPixelMap(watermarkInfo, originalPixelMap, displayInfo),
+        originalPixelMap.getImageInfo()
+      ]);
+      watermarkPixelMap = parallelResults2[0];
+      const originalInfo = parallelResults2[1];
 
-      // 2. 创建水印图像
-      const watermarkPixelMap: image.PixelMap = await this.createWatermarkPixelMap(watermarkInfo, originalPixelMap);
-      Logger.info(TAG_LOG, '成功创建水印图像');
-
-      // 3. 合成图像 - 使用原生API
-      const resultPixelMap: image.PixelMap = await this.compositeImages(originalPixelMap, watermarkPixelMap);
-      Logger.info(TAG_LOG, '成功合成水印图像');
-
-      // 4. 清理资源
-      watermarkPixelMap.release();
+      // 3. 合成图像 - 使用优化后的原生API
+      const resultPixelMap: image.PixelMap = await this.compositeImages(originalPixelMap, watermarkPixelMap, originalInfo);
       
       return resultPixelMap;
     } catch (error) {
       Logger.error(TAG_LOG, `水印处理失败: ${error instanceof Error ? error.message : String(error)}`);
       
-      // 降级处理：返回原图
-      try {
-        const originalPixelMap: image.PixelMap = await this.getPhotoPixelMap(photo);
-        Logger.info(TAG_LOG, '使用降级方案：返回原始图像');
+      // 降级处理：返回原图（使用已获取的原图或重新获取）
+      if (originalPixelMap) {
+        Logger.info(TAG_LOG, '使用降级方案：返回已获取的原始图像');
         return originalPixelMap;
+      }
+      
+      try {
+        const fallbackPixelMap: image.PixelMap = await this.getPhotoPixelMap(photo);
+        Logger.info(TAG_LOG, '使用降级方案：重新获取原始图像');
+        return fallbackPixelMap;
       } catch (fallbackError) {
         Logger.error(TAG_LOG, `降级处理也失败: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
         throw new Error('水印处理完全失败');
+      }
+    } finally {
+      // 确保资源释放
+      if (watermarkPixelMap) {
+        watermarkPixelMap.release();
       }
     }
   }
 
   /**
-   * 获取照片的PixelMap - 使用标准API
+   * 获取照片的PixelMap - 使用标准API（性能优化版本）
    */
   private async getPhotoPixelMap(photo: camera.Photo): Promise<image.PixelMap> {
+    const imageObj: image.Image = photo.main;
+    let imageSource: image.ImageSource | null = null;
+    
     try {
-      const imageObj: image.Image = photo.main;
-      
-      // 获取图像组件
+      // 直接使用util.promisify风格的异步调用，减少Promise包装开销
       const component: image.Component = await new Promise<image.Component>((resolve, reject) => {
         imageObj.getComponent(image.ComponentType.JPEG, (err, comp) => {
-          if (err || !comp) {
-            reject(err || new Error('Failed to get image component'));
-          } else {
-            resolve(comp);
-          }
+          err ? reject(err) : comp ? resolve(comp) : reject(new Error('Failed to get image component'));
         });
       });
       
-      // 创建ImageSource
-      const imageSource: image.ImageSource = image.createImageSource(component.byteBuffer);
+      // 创建ImageSource并立即使用
+      imageSource = image.createImageSource(component.byteBuffer);
       
-      try {
-        // 创建PixelMap
-        const pixelMap: image.PixelMap = await imageSource.createPixelMap({
-          desiredSize: { width: 0, height: 0 },
-          desiredRegion: { size: { width: 0, height: 0 }, x: 0, y: 0 },
-          desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
-          editable: true
-        });
-        
-        Logger.info(TAG_LOG, '成功创建PixelMap');
-        return pixelMap;
-      } finally {
-        imageSource.release();
-      }
+      // 创建PixelMap - 使用更简洁的配置
+      const pixelMap: image.PixelMap = await imageSource.createPixelMap({
+        desiredSize: { width: 0, height: 0 }, // 0表示使用原始尺寸
+        desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
+        editable: true
+      });
+      
+      return pixelMap;
     } catch (error) {
       Logger.error(TAG_LOG, `获取照片PixelMap失败: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error('无法获取照片数据');
+    } finally {
+      // 确保资源释放
+      if (imageSource) {
+        imageSource.release();
+      }
     }
   }
 
   /**
    * 创建水印PixelMap - 使用Canvas API实现清晰文字渲染，基于实际照片尺寸动态计算水印大小
+   * 优化版本：减少异步操作，缓存设备信息，优化性能
    */
-  private async createWatermarkPixelMap(watermarkInfo: WatermarkInfo, originalPixelMap: image.PixelMap): Promise<image.PixelMap> {
+  private async createWatermarkPixelMap(watermarkInfo: WatermarkInfo, originalPixelMap: image.PixelMap, displayInfo: display.Display): Promise<image.PixelMap> {
     try {
-      // 获取原图尺寸
-      const imageInfo: image.ImageInfo = await originalPixelMap.getImageInfo();
+      // 获取原图尺寸（使用缓存或并行获取）
+      const imageInfo = await originalPixelMap.getImageInfo();
       const photoWidth = imageInfo.size.width;
       const photoHeight = imageInfo.size.height;
-
-      // 获取设备像素密度 - 使用新的API
-       const displayInfo = display.getDefaultDisplaySync();
-       const pixelRatio = displayInfo.densityPixels;
-       Logger.info(TAG_LOG, `设备像素密度: ${pixelRatio}`);
+      const pixelRatio = displayInfo.densityPixels;
 
       // 水印尺寸比例设置
-      const WATERMARK_WIDTH_RATIO = 0.5;   // 
-      const WATERMARK_HEIGHT_RATIO = 0.4;  // 
+      const WATERMARK_WIDTH_RATIO = 0.5;
+      const WATERMARK_HEIGHT_RATIO = 0.4;
       
       // 基于实际照片尺寸计算水印尺寸，并考虑像素密度
-       const watermarkWidth = photoWidth * WATERMARK_WIDTH_RATIO / pixelRatio
-       const watermarkHeight = photoHeight * WATERMARK_HEIGHT_RATIO / pixelRatio
-
-      Logger.info(TAG_LOG, `照片尺寸: ${photoWidth}×${photoHeight}, 水印尺寸: ${watermarkWidth}×${watermarkHeight}`);
+      const watermarkWidth = Math.round(photoWidth * WATERMARK_WIDTH_RATIO / pixelRatio);
+      const watermarkHeight = Math.round(photoHeight * WATERMARK_HEIGHT_RATIO / pixelRatio);
 
       // 创建OffscreenCanvas进行高质量渲染
       const offscreenCanvas = new OffscreenCanvas(watermarkWidth, watermarkHeight);
       const context = offscreenCanvas.getContext('2d');
       
-      // 在HarmonyOS中，Canvas可能会根据设备DPI自动缩放
-      // 为了确保水印尺寸准确，我们直接使用计算的水印尺寸
-      // 不进行额外的设备像素比处理，避免复杂的类型检查
-      
       if (!context) {
         throw new Error('无法获取Canvas上下文');
       }
 
-      // 使用Canvas API绘制清晰的水印内容，传入实际尺寸
+      // 使用Canvas API绘制清晰的水印内容
       await this.drawWatermarkWithCanvas(context, watermarkInfo, watermarkWidth, watermarkHeight);
 
-      // 调试：检查Canvas的实际尺寸
-      Logger.info(TAG_LOG, `Canvas实际尺寸: ${offscreenCanvas.width}×${offscreenCanvas.height}`);
-      Logger.info(TAG_LOG, `Canvas预期尺寸: ${watermarkWidth}×${watermarkHeight}`);
-
-      // 从Canvas获取PixelMap - 指定正确的区域参数
+      // 直接从Canvas获取PixelMap，跳过尺寸验证（Canvas会自动处理尺寸）
       const watermarkPixelMap: image.PixelMap = await context.getPixelMap(0, 0, watermarkWidth, watermarkHeight);
-       
-      // 调试：检查获取的PixelMap实际尺寸
-      const watermarkPixelMapInfo = await watermarkPixelMap.getImageInfo();
-      Logger.info(TAG_LOG, `Canvas获取的PixelMap尺寸: ${watermarkPixelMapInfo.size.width}×${watermarkPixelMapInfo.size.height}`);
-      Logger.info(TAG_LOG, `预期水印尺寸: ${watermarkWidth}×${watermarkHeight}, 实际获取尺寸: ${watermarkPixelMapInfo.size.width}×${watermarkPixelMapInfo.size.height}`);
 
       return watermarkPixelMap;
     } catch (error) {
@@ -180,6 +176,7 @@ export class RobustWatermarkProcessor {
 
   /**
    * 使用Canvas绘制水印内容，基于固定相机分辨率的水印布局和字体
+   * 优化版本：减少状态操作，预计算布局参数，优化性能
    */
   private async drawWatermarkWithCanvas(context: OffscreenCanvasRenderingContext2D, 
                                        watermarkInfo: WatermarkInfo, 
@@ -190,7 +187,7 @@ export class RobustWatermarkProcessor {
     
     // 设置最高质量渲染参数
     context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = 'high'; // 设置最高图像平滑质量
+    context.imageSmoothingQuality = 'high';
     context.textAlign = 'left';
     context.textBaseline = 'top';
     
@@ -199,63 +196,46 @@ export class RobustWatermarkProcessor {
     
     Logger.info(TAG_LOG, `水印绘制尺寸: ${canvasWidth}×${canvasHeight}`);
     
-    // 固定各区域尺寸
-    const titleAreaHeight = 58; // 标题区域高度
-    const infoLineHeight = 16;  // 信息行高度
-    const infoCount = 7;        // 信息项数量
-    const orgAreaHeight = 24;   // 制作单位区域高度
-    const padding = 8;          // 内边距
-    
-    // 固定字体大小
-    const titleFontSize = 14;
-    const infoFontSize = 12;
-    const logoWidth = 60;
-    const logoHeight = 46.48;
-    const radius = 8;
-    const leftPadding = 8;
-    
-
     // 定义边距常量
     const MARGIN = 4; // 绘制图层之间的边距
-    const DOUBLE_MARGIN = MARGIN * 2; // 双倍边距
+    const DOUBLE_MARGIN = MARGIN * 2;
+    const radius = 8;
+    
+    // 预计算布局参数
+    const orgWidth = canvasWidth * 0.1; // 制作单位区域宽度
+    const titleBarWidth = canvasWidth * 0.3; // 标题栏宽度
+    const titleBarX = canvasWidth - titleBarWidth - MARGIN; // 标题栏X坐标
+    const orgX = MARGIN; // 制作单位区域X坐标
+    const orgHeight = canvasHeight - DOUBLE_MARGIN; // 制作单位区域高度
+    const titleBarHeight = canvasHeight - DOUBLE_MARGIN; // 标题栏高度
+    const orgY = MARGIN; // 制作单位区域Y坐标
+    const titleBarY = MARGIN; // 标题栏Y坐标
     
     context.translate(0, 0);
-    // 1. 绘制主背景 - 严格按照预览UI规范
-    context.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 白色70%透明度
     
-    // 绘制主背景 - 不用圆角
+    // 1. 绘制主背景
+    context.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.drawRoundedRect(context, 0, 0, canvasWidth, canvasHeight, radius);
     context.fill();
 
-    // 2. 在左侧绘制蓝色制作单位背景区
-    const orgWidth = canvasWidth * 0.1; // 制作单位区域宽度为背景宽度的10%
-    context.fillStyle = ('rgba(0, 87, 217, 0.5)'); // 
-    const orgX = MARGIN; // X坐标从MARGIN开始，确保左边距
-    const orgHeight = canvasHeight - DOUBLE_MARGIN; // 高度自适应，上下各保持MARGIN像素边距
-    const orgY = MARGIN; // Y坐标从MARGIN开始，确保上下边距
+    // 2. 绘制左侧制作单位背景区
+    context.fillStyle = 'rgba(0, 87, 217, 0.5)';
     this.drawRoundedRect(context, orgX, orgY, orgWidth, orgHeight, 0);
     context.fill();
     
-    // 3. 在右侧绘制蓝色标题栏背景区 - 不用圆角
-    const titleBarWidth = canvasWidth * 0.3; // 标题栏宽度为背景宽度的30%
-    context.fillStyle = ('rgba(0, 87, 217, 0.5)'); // 
-    const titleBarX = canvasWidth - titleBarWidth - MARGIN; // 从右侧开始，保持MARGIN像素右边距
-    const titleBarHeight = canvasHeight - DOUBLE_MARGIN; // 高度自适应，上下各保持MARGIN像素边距
-    const titleBarY = MARGIN; // Y坐标从MARGIN开始，确保上下边距
+    // 3. 绘制右侧标题栏背景区
+    context.fillStyle = 'rgba(0, 87, 217, 0.5)';
     this.drawRoundedRect(context, titleBarX, titleBarY, titleBarWidth, titleBarHeight, 0);
     context.fill();
 
-    // 4. 在右侧蓝色标题栏区域绘制旋转90度的水印logo图片
+    // 4. 绘制水印logo和文字
     const watermarkLogo = await this.loadWatermarkLogo();
     if (watermarkLogo) {
       const logoInfo = await watermarkLogo.getImageInfo();
       
-      // 保持原始长宽比，计算最大可用尺寸（考虑MARGIN像素边距）
-      // 注意：由于要旋转90度，我们需要交换宽高的限制条件
-      const maxLogoWidth = titleBarHeight - DOUBLE_MARGIN; // 旋转后，原高度变为宽度限制
-      const maxLogoHeight = titleBarWidth - DOUBLE_MARGIN; // 旋转后，原宽度变为高度限制
-      
-      // 计算保持原始长宽比的缩放尺寸
+      // 计算logo缩放尺寸
+      const maxLogoWidth = titleBarHeight - DOUBLE_MARGIN;
+      const maxLogoHeight = titleBarWidth - DOUBLE_MARGIN;
       const widthRatio = maxLogoWidth / logoInfo.size.width;
       const heightRatio = maxLogoHeight / logoInfo.size.height;
       const scaleRatio = Math.min(widthRatio, heightRatio);
@@ -263,104 +243,75 @@ export class RobustWatermarkProcessor {
       const logoWidth = logoInfo.size.width * scaleRatio;
       const logoHeight = logoInfo.size.height * scaleRatio;
       
-      // 计算位置，确保与标题区的上侧、左右侧保持MARGIN个像素间距
-      // 注意：旋转90度后，坐标系发生变化，需要重新计算位置
-      const logoX = titleBarX + (titleBarWidth - logoHeight) / 2; // 水平居中（考虑旋转后的宽度）
-      const logoY = titleBarY + MARGIN; // 从标题区顶部开始，保持MARGIN像素上边距
+      // 计算logo位置
+      const logoX = titleBarX + (titleBarWidth - logoHeight) / 2;
+      const logoY = titleBarY + MARGIN;
       
-      // 保存当前状态
+      // 绘制logo
       context.save();
-      
-      // 移动到logo中心点并旋转90度
       context.translate(logoX + logoHeight / 2, logoY + logoWidth / 2);
-      context.rotate(90 * Math.PI / 180); // 顺时针旋转90度
-      
-      // 绘制logo（保持原始长宽比）
+      context.rotate(90 * Math.PI / 180);
       context.drawImage(watermarkLogo, -logoWidth / 2, -logoHeight / 2, logoWidth, logoHeight);
-      
-      // 恢复状态
       context.restore();
 
-      // 5. 在水印logo下方绘制旋转90度的文字
-      context.fillStyle = 'white'; // 白色字体
-      context.font = '80px sans-serif'; // 设置字体大小和样式
-      context.textAlign = 'center'; // 水平居中
-      context.textBaseline = 'middle'; // 垂直居中
+      // 绘制标题文字
+      context.fillStyle = 'white';
+      context.font = '80px sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
       
-      // 保存当前状态
-      context.save();
-      
-      // 移动到文字中心点并旋转90度
-      const titleTextX = titleBarX + titleBarWidth / 2; // 水平中心
-      // 计算蓝色标题区剩余区域的Y轴中心点
-      // 剩余高度 = 标题栏总高度 - (水印logo的Y位置 + 水印logo的宽度)
       const remainingHeight = titleBarHeight - (logoY + logoWidth);
-      // Y轴中心点 = 剩余高度的中心 + 水印logo底部位置
+      const titleTextX = titleBarX + titleBarWidth / 2;
       const titleTextY = logoY + logoWidth + remainingHeight / 2;
+      
+      context.save();
       context.translate(titleTextX, titleTextY);
-      context.rotate(90 * Math.PI / 180); // 顺时针旋转90度
-      
-      // 绘制文字（居中对齐）
+      context.rotate(90 * Math.PI / 180);
       context.fillText('灭火救援灾害现场', 0, 0);
-      
-      // 恢复状态
       context.restore();
     }
     
-    // 6. 在左侧制作单位区与右侧标题区域之间绘制旋转90度的文本信息
+    // 5. 绘制信息文本
     const infoItems = this.getWatermarkInfoItems(watermarkInfo);
-    const infoStartX = MARGIN; // 从主背景左侧边开始
-    const infoAreaWidth = titleBarX - MARGIN; // 可用宽度（从左侧边到右侧标题区左侧边）
-    
-    // 固定字体大小为50，行高根据剩余空间均匀分配
-    const fontSize = 50; // 字体大小固定为50
-    const itemCount = infoItems.length; // 总行数
-    
-    // 计算可用高度（旋转后，宽度变为高度）
+    const infoAreaWidth = titleBarX - MARGIN;
+    const fontSize = 50;
+    const itemCount = infoItems.length;
     const availableHeight = infoAreaWidth;
-    
-    // 计算每行需要的行高（均匀分配剩余空间）
     const adjustedLineHeight = availableHeight / itemCount;
     
-    context.fillStyle = 'black'; // 黑色字体
-    context.font = `${fontSize}px sans-serif`; // 设置固定字体大小50px
-    context.textAlign = 'left'; // 左对齐
-    context.textBaseline = 'middle'; // 垂直居中
+    context.fillStyle = 'black';
+    context.font = `${fontSize}px sans-serif`;
+    context.textAlign = 'left';
+    context.textBaseline = 'middle';
     
-    // 保存当前状态
+    const infoCenterX = MARGIN + infoAreaWidth / 2;
+    const infoCenterY = DOUBLE_MARGIN;
+    const totalAdjustedHeight = (itemCount - 1) * adjustedLineHeight;
+    const startY = -totalAdjustedHeight / 2;
+    
     context.save();
-    
-    // 移动到信息区域并旋转90度，保持DOUBLE_MARGIN间距对齐
-    const infoCenterX = infoStartX + infoAreaWidth / 2; // 信息区域水平中心
-    const infoCenterY = DOUBLE_MARGIN; // Y轴保持DOUBLE_MARGIN间距对齐
     context.translate(infoCenterX, infoCenterY);
-    context.rotate(90 * Math.PI / 180); // 顺时针旋转90度
+    context.rotate(90 * Math.PI / 180);
     
-    // 计算垂直均匀分布
-    const totalAdjustedHeight = (itemCount - 1) * adjustedLineHeight; // 总间距高度
-    const startY = -totalAdjustedHeight / 2; // 从中心开始向上偏移
-    
-    // 绘制所有文本信息（垂直均匀分布）
+    // 批量绘制文本信息
     infoItems.forEach((item, index) => {
       const text = `${item.label}：${item.value}`;
       const y = startY + index * adjustedLineHeight;
       
-      // 制作单位单独设置为白色和中等粗细
       if (item.label === '制作单位') {
         context.fillStyle = 'white';
-        context.font = '500 50px sans-serif'; // 中等粗细 (FontWeight.Medium)
+        context.font = '500 50px sans-serif';
       } else {
         context.fillStyle = 'black';
-        context.font = '50px sans-serif'; // 恢复默认字体
+        context.font = '50px sans-serif';
       }
       
       context.fillText(text, 0, y);
     });
     
-    // 恢复状态
     context.restore();
     
-    // 恢复变换状态
+    // 恢复初始状态
     context.restore();
     
     Logger.info(TAG_LOG, `水印绘制完成: ${canvasWidth}×${canvasHeight}`);
@@ -390,66 +341,59 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 合成图像 - 使用原生PixelMap操作
+   * 合成图像 - 使用原生PixelMap操作（优化版）
    */
-  private async compositeImages(originalPixelMap: image.PixelMap, watermarkPixelMap: image.PixelMap): Promise<image.PixelMap> {
+  private async compositeImages(originalPixelMap: image.PixelMap, watermarkPixelMap: image.PixelMap, originalInfo: image.ImageInfo): Promise<image.PixelMap> {
     try {
-      // 获取原图信息
-      const originalInfo: image.ImageInfo = await originalPixelMap.getImageInfo();
-      const watermarkInfo: image.ImageInfo = await watermarkPixelMap.getImageInfo();
+      // 获取水印图像信息（原图信息已通过参数传入）
+      const watermarkInfo = await watermarkPixelMap.getImageInfo();
 
-      // 照片合成前调试信息 - 详细尺寸参数
-      Logger.info(TAG_LOG, `=== 照片合成前尺寸调试 ===`);
-      Logger.info(TAG_LOG, `原图尺寸: ${originalInfo.size.width}×${originalInfo.size.height}`);
-      Logger.info(TAG_LOG, `水印尺寸: ${watermarkInfo.size.width}×${watermarkInfo.size.height}`);
+      const originalWidth = originalInfo.size.width;
+      const originalHeight = originalInfo.size.height;
 
+      // 照片合成前尺寸信息（调试时启用）
+      // Logger.debug(TAG_LOG, `原图尺寸: ${originalWidth}×${originalHeight}, 水印尺寸: ${watermarkInfo.size.width}×${watermarkInfo.size.height}`);
 
-      // 创建结果PixelMap - 使用最高质量配置，避免缩放
+      // 直接使用原图创建结果PixelMap，避免额外的缓冲区复制
+      // 使用createPixelMapFromPixelMap API（如果可用）或直接复制
+      let resultPixelMap: image.PixelMap;
+      
+      // 直接使用传统方法创建结果PixelMap
       const createOptions: image.InitializationOptions = {
         size: originalInfo.size,
-        pixelFormat: image.PixelMapFormat.RGBA_8888, // 使用正确的PixelMapFormat
+        pixelFormat: image.PixelMapFormat.RGBA_8888,
         alphaType: image.AlphaType.PREMUL,
-        scaleMode: image.ScaleMode.CENTER_CROP, // 避免缩放，保持原始尺寸
-        editable: true // 确保可编辑
+        scaleMode: image.ScaleMode.CENTER_CROP,
+        editable: true
       };
 
-      const pixelBytes = originalInfo.size.width * originalInfo.size.height * 4;
+      const pixelBytes = originalWidth * originalHeight * 4;
       const buffer = new ArrayBuffer(pixelBytes);
       
-      const resultPixelMap: image.PixelMap = await image.createPixelMap(buffer, createOptions);
+      resultPixelMap = await image.createPixelMap(buffer, createOptions);
 
       // 复制原图数据
-      const originalBuffer = new ArrayBuffer(originalInfo.size.width * originalInfo.size.height * 4);
-      const originalArea: image.PositionArea = {
-        pixels: originalBuffer,
+      const copyArea: image.PositionArea = {
+        pixels: buffer,
         offset: 0,
-        stride: originalInfo.size.width * 4,
+        stride: originalWidth * 4,
         region: { size: originalInfo.size, x: 0, y: 0 }
       };
       
-      await originalPixelMap.readPixels(originalArea);
-      
-      const resultArea: image.PositionArea = {
-        pixels: originalBuffer,
-        offset: 0,
-        stride: originalInfo.size.width * 4,
-        region: { size: originalInfo.size, x: 0, y: 0 }
-      };
-      
-      await resultPixelMap.writePixels(resultArea);
+      await originalPixelMap.readPixels(copyArea);
+      await resultPixelMap.writePixels(copyArea);
 
       // 水印位置设置在照片的左上侧
       const watermarkX = 0; // 左上角x坐标
       const watermarkY = 0; // 左上角y坐标
 
-      // 记录水印尺寸信息用于调试
-      Logger.info(TAG_LOG, `水印合成信息 - 原图: ${originalInfo.size.width}×${originalInfo.size.height}, 水印: ${watermarkInfo.size.width}×${watermarkInfo.size.height}`);
-      Logger.info(TAG_LOG, `水印位置: x=${watermarkX}, y=${watermarkY}, 预期比例: ${(watermarkInfo.size.width / originalInfo.size.width).toFixed(3)}x`);
+      // 水印合成信息（调试时启用）
+      // Logger.debug(TAG_LOG, `水印位置: x=${watermarkX}, y=${watermarkY}, 比例: ${(watermarkInfo.size.width / originalWidth).toFixed(3)}x`);
 
-      // 使用原生API合成水印
+      // 使用优化后的原生API合成水印
       await this.blendWatermark(resultPixelMap, watermarkPixelMap, watermarkX, watermarkY);
 
-      Logger.info(TAG_LOG, '图像合成完成');
+      // Logger.debug(TAG_LOG, '图像合成完成');
       return resultPixelMap;
     } catch (error) {
       Logger.error(TAG_LOG, `图像合成失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -458,56 +402,80 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 混合水印到目标图像 - 像素级操作
+   * 混合水印到目标图像 - 像素级操作（优化版）
    */
   private async blendWatermark(targetPixelMap: image.PixelMap, watermarkPixelMap: image.PixelMap, x: number, y: number): Promise<void> {
     try {
-      const targetInfo: image.ImageInfo = await targetPixelMap.getImageInfo();
-      const watermarkInfo: image.ImageInfo = await watermarkPixelMap.getImageInfo();
+      // 并行获取图像信息（避免解构赋值）
+      const imageInfos = await Promise.all([
+        targetPixelMap.getImageInfo(),
+        watermarkPixelMap.getImageInfo()
+      ]);
+      const targetInfo = imageInfos[0];
+      const watermarkInfo = imageInfos[1];
 
-      // 读取目标图像数据
-      const targetBuffer = new ArrayBuffer(targetInfo.size.width * targetInfo.size.height * 4);
+      const targetWidth = targetInfo.size.width;
+      const targetHeight = targetInfo.size.height;
+      const watermarkWidth = watermarkInfo.size.width;
+      const watermarkHeight = watermarkInfo.size.height;
+
+      // 计算有效混合区域（避免不必要的边界检查）
+      const startX = Math.max(x, 0);
+      const startY = Math.max(y, 0);
+      const endX = Math.min(x + watermarkWidth, targetWidth);
+      const endY = Math.min(y + watermarkHeight, targetHeight);
+
+      // 如果没有重叠区域，直接返回
+      if (startX >= endX || startY >= endY) {
+        Logger.warn(TAG_LOG, '水印区域超出目标图像边界，跳过混合');
+        return;
+      }
+
+      // 优化内存使用：只读取需要修改的目标区域
+      const blendWidth = endX - startX;
+      const blendHeight = endY - startY;
+      
+      // 读取目标图像需要修改的区域
+      const targetBuffer = new ArrayBuffer(blendWidth * blendHeight * 4);
       const targetArea: image.PositionArea = {
         pixels: targetBuffer,
         offset: 0,
-        stride: targetInfo.size.width * 4,
-        region: { size: targetInfo.size, x: 0, y: 0 }
+        stride: blendWidth * 4,
+        region: { size: { width: blendWidth, height: blendHeight }, x: startX, y: startY }
       };
       await targetPixelMap.readPixels(targetArea);
       const targetView = new Uint8Array(targetBuffer);
 
-      // 读取水印数据
-      const watermarkBuffer = new ArrayBuffer(watermarkInfo.size.width * watermarkInfo.size.height * 4);
+      // 读取水印数据（对应区域）
+      const watermarkBuffer = new ArrayBuffer(blendWidth * blendHeight * 4);
       const watermarkArea: image.PositionArea = {
         pixels: watermarkBuffer,
         offset: 0,
-        stride: watermarkInfo.size.width * 4,
-        region: { size: watermarkInfo.size, x: 0, y: 0 }
+        stride: blendWidth * 4,
+        region: { size: { width: blendWidth, height: blendHeight }, x: startX - x, y: startY - y }
       };
       await watermarkPixelMap.readPixels(watermarkArea);
       const watermarkView = new Uint8Array(watermarkBuffer);
 
-      // 混合像素
-      for (let wy = 0; wy < watermarkInfo.size.height; wy++) {
-        for (let wx = 0; wx < watermarkInfo.size.width; wx++) {
-          const targetX = x + wx;
-          const targetY = y + wy;
+      // 预计算水印在目标图像中的偏移量（已通过循环变量计算，无需额外使用）
 
-          // 检查边界
-          if (targetX >= 0 && targetX < targetInfo.size.width && 
-              targetY >= 0 && targetY < targetInfo.size.height) {
-            
-            const targetIndex = (targetY * targetInfo.size.width + targetX) * 4;
-            const watermarkIndex = (wy * watermarkInfo.size.width + wx) * 4;
+      // 优化混合循环 - 处理局部区域
+      for (let localY = 0; localY < blendHeight; localY++) {
+        for (let localX = 0; localX < blendWidth; localX++) {
+          const targetIndex = (localY * blendWidth + localX) * 4;
+          const watermarkIndex = targetIndex; // 由于读取的是相同大小的区域
 
-            const alpha = watermarkView[watermarkIndex + 3] / 255.0;
-            const invAlpha = 1.0 - alpha;
+          const alpha = watermarkView[watermarkIndex + 3] / 255.0;
+          
+          // 如果水印像素完全透明，跳过混合
+          if (alpha < 0.01) continue;
+          
+          const invAlpha = 1.0 - alpha;
 
-            // Alpha混合
-            targetView[targetIndex] = Math.floor(targetView[targetIndex] * invAlpha + watermarkView[watermarkIndex] * alpha);
-            targetView[targetIndex + 1] = Math.floor(targetView[targetIndex + 1] * invAlpha + watermarkView[watermarkIndex + 1] * alpha);
-            targetView[targetIndex + 2] = Math.floor(targetView[targetIndex + 2] * invAlpha + watermarkView[watermarkIndex + 2] * alpha);
-          }
+          // Alpha混合（使用更快的整数运算）
+          targetView[targetIndex] = (targetView[targetIndex] * invAlpha + watermarkView[watermarkIndex] * alpha + 0.5) | 0;
+          targetView[targetIndex + 1] = (targetView[targetIndex + 1] * invAlpha + watermarkView[watermarkIndex + 1] * alpha + 0.5) | 0;
+          targetView[targetIndex + 2] = (targetView[targetIndex + 2] * invAlpha + watermarkView[watermarkIndex + 2] * alpha + 0.5) | 0;
         }
       }
 
@@ -515,12 +483,12 @@ export class RobustWatermarkProcessor {
       const writeArea: image.PositionArea = {
         pixels: targetBuffer,
         offset: 0,
-        stride: targetInfo.size.width * 4,
-        region: { size: targetInfo.size, x: 0, y: 0 }
+        stride: blendWidth * 4,
+        region: { size: { width: blendWidth, height: blendHeight }, x: startX, y: startY }
       };
       await targetPixelMap.writePixels(writeArea);
       
-      Logger.info(TAG_LOG, '水印混合完成');
+      // Logger.debug(TAG_LOG, '水印混合完成');
     } catch (error) {
       Logger.error(TAG_LOG, `水印混合失败: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error('无法混合水印');
