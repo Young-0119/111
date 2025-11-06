@@ -24,7 +24,7 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
-import { RobustWatermarkProcessor, WatermarkProcessConfig, WatermarkInfo } from '../watermark/RobustWatermarkProcessor';
+import { RobustWatermarkProcessor, WatermarkInfo } from '../watermark/RobustWatermarkProcessor';
 
 const TAG_LOG = 'PhotoManager';
 
@@ -37,7 +37,6 @@ export class PhotoManager implements OutputManager {
   
   // 水印处理相关属性
   private robustProcessor: RobustWatermarkProcessor = RobustWatermarkProcessor.getInstance();
-  private watermarkConfig: WatermarkProcessConfig;
   private enableWatermark: boolean = true;
   
   private callback: (pixelMap: image.PixelMap, url: string) => void = () => {
@@ -47,16 +46,6 @@ export class PhotoManager implements OutputManager {
     this.context = context;
     this.isActive = isActive;
     this.isSingle = isSingle;
-    
-    // 初始化水印配置
-    this.watermarkConfig = {
-      enabled: true,
-      quality: 90,
-      position: 'top-left',
-      opacity: 0.9,
-      scale: 1.0,
-      rotation: 0
-    };
     
     // 初始化水印处理器
     this.initializeWatermarkProcessors();
@@ -84,24 +73,6 @@ export class PhotoManager implements OutputManager {
     } catch (error) {
       Logger.error(TAG_LOG, `水印处理器初始化失败: ${JSON.stringify(error)}`);
     }
-  }
-
-  /**
-   * 设置水印配置
-   */
-  setWatermarkConfig(config: Partial<WatermarkProcessConfig>): void {
-    // 手动合并配置对象
-    const newConfig: WatermarkProcessConfig = {
-      enabled: config.enabled !== undefined ? config.enabled : this.watermarkConfig.enabled,
-      quality: config.quality !== undefined ? config.quality : this.watermarkConfig.quality,
-      position: config.position !== undefined ? config.position : this.watermarkConfig.position,
-      opacity: config.opacity !== undefined ? config.opacity : this.watermarkConfig.opacity,
-      scale: config.scale !== undefined ? config.scale : this.watermarkConfig.scale,
-      rotation: config.rotation !== undefined ? config.rotation : this.watermarkConfig.rotation
-    };
-    this.watermarkConfig = newConfig;
-    // 重新初始化处理器
-    this.initializeWatermarkProcessors();
   }
 
   /**
@@ -201,7 +172,7 @@ export class PhotoManager implements OutputManager {
       }
       
       // 检查是否启用水印
-      if (this.enableWatermark && this.watermarkConfig.enabled) {
+      if (this.enableWatermark) {
         await this.processPhotoWithWatermark(context, photo);
       } else {
         // 不使用水印，直接保存

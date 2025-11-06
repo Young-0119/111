@@ -4,18 +4,9 @@
  */
 import { image } from '@kit.ImageKit';
 import { camera } from '@kit.CameraKit';
+import { display } from '@kit.ArkUI';
 import { Logger } from 'commons';
 import { common } from '@kit.AbilityKit';
-
-// 水印处理配置接口
-export interface WatermarkProcessConfig {
-  readonly enabled: boolean;
-  readonly quality: number;  // 1-100
-  readonly position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-  readonly opacity: number;  // 0-1
-  readonly scale: number;    // 0.5-2.0
-  readonly rotation: number; // 0-360度
-}
 
 // 水印信息接口
 export interface WatermarkInfo {
@@ -137,7 +128,7 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 创建水印PixelMap - 使用Canvas API实现清晰文字渲染，动态适应照片尺寸
+   * 创建水印PixelMap - 使用Canvas API实现清晰文字渲染，基于实际照片尺寸动态计算水印大小
    */
   private async createWatermarkPixelMap(watermarkInfo: WatermarkInfo, originalPixelMap: image.PixelMap): Promise<image.PixelMap> {
     try {
@@ -146,24 +137,28 @@ export class RobustWatermarkProcessor {
       const photoWidth = imageInfo.size.width;
       const photoHeight = imageInfo.size.height;
 
-      // 基于预览界面的水印占比进行动态适应
-      // 预览界面水印占比：宽度16.3%，高度16.7%（经过0.8缩放后的实际占比）
-      const PREVIEW_WIDTH_RATIO = 0.163;  // 预览界面水印宽度占比
-      const PREVIEW_HEIGHT_RATIO = 0.167; // 预览界面水印高度占比
+      // 获取设备像素密度 - 使用新的API
+       const displayInfo = display.getDefaultDisplaySync();
+       const pixelRatio = displayInfo.densityPixels;
+       Logger.info(TAG_LOG, `设备像素密度: ${pixelRatio}`);
+
+      // 水印尺寸比例设置
+      const WATERMARK_WIDTH_RATIO = 0.5;   // 
+      const WATERMARK_HEIGHT_RATIO = 0.4;  // 
       
-      // 根据照片实际尺寸计算水印尺寸，保持与预览界面相同的视觉比例
-      const adaptiveWatermarkWidth = Math.floor(photoWidth * PREVIEW_WIDTH_RATIO);
-      const adaptiveWatermarkHeight = Math.floor(photoHeight * PREVIEW_HEIGHT_RATIO);
-      
-      // 设置合理的尺寸范围，确保水印既清晰又不过大
-      const watermarkWidth = Math.max(200, Math.min(adaptiveWatermarkWidth, 400));  // 限制在200-400px之间
-      const watermarkHeight = Math.max(250, Math.min(adaptiveWatermarkHeight, 500)); // 限制在250-500px之间
+      // 基于实际照片尺寸计算水印尺寸，并考虑像素密度
+       const watermarkWidth = photoWidth * WATERMARK_WIDTH_RATIO / pixelRatio
+       const watermarkHeight = photoHeight * WATERMARK_HEIGHT_RATIO / pixelRatio
 
       Logger.info(TAG_LOG, `照片尺寸: ${photoWidth}×${photoHeight}, 水印尺寸: ${watermarkWidth}×${watermarkHeight}`);
 
       // 创建OffscreenCanvas进行高质量渲染
       const offscreenCanvas = new OffscreenCanvas(watermarkWidth, watermarkHeight);
       const context = offscreenCanvas.getContext('2d');
+      
+      // 在HarmonyOS中，Canvas可能会根据设备DPI自动缩放
+      // 为了确保水印尺寸准确，我们直接使用计算的水印尺寸
+      // 不进行额外的设备像素比处理，避免复杂的类型检查
       
       if (!context) {
         throw new Error('无法获取Canvas上下文');
@@ -172,8 +167,17 @@ export class RobustWatermarkProcessor {
       // 使用Canvas API绘制清晰的水印内容，传入实际尺寸
       await this.drawWatermarkWithCanvas(context, watermarkInfo, watermarkWidth, watermarkHeight);
 
-      // 从Canvas获取PixelMap
+      // 调试：检查Canvas的实际尺寸
+      Logger.info(TAG_LOG, `Canvas实际尺寸: ${offscreenCanvas.width}×${offscreenCanvas.height}`);
+      Logger.info(TAG_LOG, `Canvas预期尺寸: ${watermarkWidth}×${watermarkHeight}`);
+
+      // 从Canvas获取PixelMap - 指定正确的区域参数
       const watermarkPixelMap: image.PixelMap = await context.getPixelMap(0, 0, watermarkWidth, watermarkHeight);
+       
+      // 调试：检查获取的PixelMap实际尺寸
+      const watermarkPixelMapInfo = await watermarkPixelMap.getImageInfo();
+      Logger.info(TAG_LOG, `Canvas获取的PixelMap尺寸: ${watermarkPixelMapInfo.size.width}×${watermarkPixelMapInfo.size.height}`);
+      Logger.info(TAG_LOG, `预期水印尺寸: ${watermarkWidth}×${watermarkHeight}, 实际获取尺寸: ${watermarkPixelMapInfo.size.width}×${watermarkPixelMapInfo.size.height}`);
 
       return watermarkPixelMap;
     } catch (error) {
@@ -183,12 +187,12 @@ export class RobustWatermarkProcessor {
   }
 
   /**
-   * 使用Canvas绘制水印内容，根据动态尺寸自适应调整布局和字体
+   * 使用Canvas绘制水印内容，基于固定相机分辨率的水印布局和字体
    */
   private async drawWatermarkWithCanvas(context: OffscreenCanvasRenderingContext2D, 
                                        watermarkInfo: WatermarkInfo, 
-                                       canvasWidth: number, 
-                                       canvasHeight: number): Promise<void> {
+                                       canvasWidth: number , 
+                                       canvasHeight: number ): Promise<void> {
     // 清除画布
     context.clearRect(0, 0, canvasWidth, canvasHeight);
     
@@ -201,104 +205,173 @@ export class RobustWatermarkProcessor {
     // 保存初始状态
     context.save();
     
-    // 基于动态尺寸计算缩放比例（以220px为基准）
-    const baseWidth = 220; // 预览UI的基准宽度
-    const scaleRatio = canvasWidth / baseWidth; // 计算缩放比例
+    Logger.info(TAG_LOG, `水印绘制尺寸: ${canvasWidth}×${canvasHeight}`);
     
-    Logger.info(TAG_LOG, `水印绘制尺寸: ${canvasWidth}×${canvasHeight}, 缩放比例: ${scaleRatio.toFixed(2)}`);
-    
-    // 动态计算各区域尺寸（基于缩放比例）
-    const titleAreaHeight = Math.floor(58 * scaleRatio); // 标题区域高度
-    const infoLineHeight = Math.floor(16 * scaleRatio);  // 信息行高度
+    // 固定各区域尺寸
+    const titleAreaHeight = 58; // 标题区域高度
+    const infoLineHeight = 16;  // 信息行高度
     const infoCount = 7;        // 信息项数量
-    const orgAreaHeight = Math.floor(24 * scaleRatio);   // 制作单位区域高度
-    const padding = Math.floor(8 * scaleRatio);          // 内边距
+    const orgAreaHeight = 24;   // 制作单位区域高度
+    const padding = 8;          // 内边距
     
-    // 动态计算字体大小
-    const titleFontSize = Math.floor(14 * scaleRatio);
-    const infoFontSize = Math.floor(12 * scaleRatio);
-    const logoWidth = Math.floor(60 * scaleRatio);
-    const logoHeight = Math.floor(46.48 * scaleRatio);
-    const radius = Math.floor(8 * scaleRatio);
-    const leftPadding = Math.floor(8 * scaleRatio);
+    // 固定字体大小
+    const titleFontSize = 14;
+    const infoFontSize = 12;
+    const logoWidth = 60;
+    const logoHeight = 46.48;
+    const radius = 8;
+    const leftPadding = 8;
     
-    // 应用变换：保持与预览UI一致的变换效果
-    // 1. 移动到合适位置进行变换
-    context.translate(canvasHeight * 0.8, 0); // 为旋转后预留空间
+
+    // 定义边距常量
+    const MARGIN = 4; // 绘制图层之间的边距
+    const DOUBLE_MARGIN = MARGIN * 2; // 双倍边距
     
-    // 2. 缩放80%（保持与预览UI一致）
-    context.scale(0.8, 0.8);
-    
-    // 3. 旋转90度（以左下角为轴心）
-    context.rotate(90 * Math.PI / 180);
-    
-    // 现在绘制水印内容（在变换后的坐标系中）
-    
+    context.translate(0, 0);
     // 1. 绘制主背景 - 严格按照预览UI规范
     context.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 白色70%透明度
     
-    // 绘制圆角矩形背景
-    this.drawRoundedRect(context, 0, 0, canvasWidth, canvasHeight, radius);
+    // 绘制主背景 - 不用圆角
+    this.drawRoundedRect(context, 0, 0, canvasWidth, canvasHeight, radius, true, true);
+    context.fill();
+
+    // 2. 在左侧绘制蓝色制作单位背景区
+    const orgWidth = canvasWidth * 0.1; // 制作单位区域宽度为背景宽度的10%
+    context.fillStyle = ('rgba(0, 87, 217, 0.5)'); // 
+    const orgX = MARGIN; // X坐标从MARGIN开始，确保左边距
+    const orgHeight = canvasHeight - DOUBLE_MARGIN; // 高度自适应，上下各保持MARGIN像素边距
+    const orgY = MARGIN; // Y坐标从MARGIN开始，确保上下边距
+    this.drawRoundedRect(context, orgX, orgY, orgWidth, orgHeight, radius, false, false);
     context.fill();
     
-    // 2. 绘制标题区域背景 - 蓝色50%透明度
-    context.fillStyle = 'rgba(0, 87, 217, 0.5)';
-    this.drawRoundedRect(context, 0, 0, canvasWidth, titleAreaHeight, radius, true, false);
+    // 3. 在右侧绘制蓝色标题栏背景区 - 不用圆角
+    const titleBarWidth = canvasWidth * 0.3; // 标题栏宽度为背景宽度的30%
+    context.fillStyle = ('rgba(0, 87, 217, 0.5)'); // 
+    const titleBarX = canvasWidth - titleBarWidth - MARGIN; // 从右侧开始，保持MARGIN像素右边距
+    const titleBarHeight = canvasHeight - DOUBLE_MARGIN; // 高度自适应，上下各保持MARGIN像素边距
+    const titleBarY = MARGIN; // Y坐标从MARGIN开始，确保上下边距
+    this.drawRoundedRect(context, titleBarX, titleBarY, titleBarWidth, titleBarHeight, radius, false, false);
     context.fill();
-    
-    // 3. 绘制徽章图标区域（使用真实的watermark_logo.png）
-    const logoX = Math.floor(12 * scaleRatio); // 左边距
-    const logoY = (titleAreaHeight - logoHeight) / 2; // 垂直居中
-    
-    // 加载并绘制徽章图片
-    const logoPixelMap = await this.loadWatermarkLogo();
-    if (logoPixelMap) {
-      context.drawImage(logoPixelMap, logoX, logoY, logoWidth, logoHeight);
+
+    // 4. 在右侧蓝色标题栏区域绘制旋转90度的水印logo图片
+    const watermarkLogo = await this.loadWatermarkLogo();
+    if (watermarkLogo) {
+      const logoInfo = await watermarkLogo.getImageInfo();
+      
+      // 保持原始长宽比，计算最大可用尺寸（考虑MARGIN像素边距）
+      // 注意：由于要旋转90度，我们需要交换宽高的限制条件
+      const maxLogoWidth = titleBarHeight - DOUBLE_MARGIN; // 旋转后，原高度变为宽度限制
+      const maxLogoHeight = titleBarWidth - DOUBLE_MARGIN; // 旋转后，原宽度变为高度限制
+      
+      // 计算保持原始长宽比的缩放尺寸
+      const widthRatio = maxLogoWidth / logoInfo.size.width;
+      const heightRatio = maxLogoHeight / logoInfo.size.height;
+      const scaleRatio = Math.min(widthRatio, heightRatio);
+      
+      const logoWidth = logoInfo.size.width * scaleRatio;
+      const logoHeight = logoInfo.size.height * scaleRatio;
+      
+      // 计算位置，确保与标题区的上侧、左右侧保持MARGIN个像素间距
+      // 注意：旋转90度后，坐标系发生变化，需要重新计算位置
+      const logoX = titleBarX + (titleBarWidth - logoHeight) / 2; // 水平居中（考虑旋转后的宽度）
+      const logoY = titleBarY + MARGIN; // 从标题区顶部开始，保持MARGIN像素上边距
+      
+      // 保存当前状态
+      context.save();
+      
+      // 移动到logo中心点并旋转90度
+      context.translate(logoX + logoHeight / 2, logoY + logoWidth / 2);
+      context.rotate(90 * Math.PI / 180); // 顺时针旋转90度
+      
+      // 绘制logo（保持原始长宽比）
+      context.drawImage(watermarkLogo, -logoWidth / 2, -logoHeight / 2, logoWidth, logoHeight);
+      
+      // 恢复状态
+      context.restore();
+
+      // 5. 在水印logo下方绘制旋转90度的文字
+      context.fillStyle = 'white'; // 白色字体
+      context.font = '80px sans-serif'; // 设置字体大小和样式
+      context.textAlign = 'center'; // 水平居中
+      context.textBaseline = 'middle'; // 垂直居中
+      
+      // 保存当前状态
+      context.save();
+      
+      // 移动到文字中心点并旋转90度
+      const titleTextX = titleBarX + titleBarWidth / 2; // 水平中心
+      // 计算蓝色标题区剩余区域的Y轴中心点
+      // 剩余高度 = 标题栏总高度 - (水印logo的Y位置 + 水印logo的宽度)
+      const remainingHeight = titleBarHeight - (logoY + logoWidth);
+      // Y轴中心点 = 剩余高度的中心 + 水印logo底部位置
+      const titleTextY = logoY + logoWidth + remainingHeight / 2;
+      context.translate(titleTextX, titleTextY);
+      context.rotate(90 * Math.PI / 180); // 顺时针旋转90度
+      
+      // 绘制文字（居中对齐）
+      context.fillText('灭火救援灾害现场', 0, 0);
+      
+      // 恢复状态
+      context.restore();
     }
     
-    // 4. 绘制标题文字 - 动态字体大小，白色粗体
-    context.fillStyle = '#FFFFFF';
-    context.font = `bold ${titleFontSize}px sans-serif`; // 动态字体大小
-    const titleText = '灭火救援灾害现场';
-    const titleX = logoX + logoWidth + Math.floor(12 * scaleRatio); // logo右侧 + 间距
-    const titleY = (titleAreaHeight - titleFontSize) / 2; // 垂直居中
-    context.fillText(titleText, titleX, titleY);
-    
-    // 5. 绘制信息项 - 动态字体大小，黑色文字
-    context.fillStyle = '#000000';
-    context.font = `${infoFontSize}px sans-serif`;
-    
-    let yOffset = titleAreaHeight + Math.floor(6 * scaleRatio); // 标题区域后开始，增加间距
-    
+    // 6. 在左侧制作单位区与右侧标题区域之间绘制旋转90度的文本信息
     const infoItems = this.getWatermarkInfoItems(watermarkInfo);
+    const infoStartX = MARGIN; // 从主背景左侧边开始
+    const infoAreaWidth = titleBarX - MARGIN; // 可用宽度（从左侧边到右侧标题区左侧边）
     
-    // 绘制前7个信息项（不包括制作单位）
-    for (let i = 0; i < Math.min(infoItems.length - 1, 7); i++) {
-      const item = infoItems[i];
+    // 固定字体大小为50，行高根据剩余空间均匀分配
+    const fontSize = 50; // 字体大小固定为50
+    const itemCount = infoItems.length; // 总行数
+    
+    // 计算可用高度（旋转后，宽度变为高度）
+    const availableHeight = infoAreaWidth;
+    
+    // 计算每行需要的行高（均匀分配剩余空间）
+    const adjustedLineHeight = availableHeight / itemCount;
+    
+    context.fillStyle = 'black'; // 黑色字体
+    context.font = `${fontSize}px sans-serif`; // 设置固定字体大小50px
+    context.textAlign = 'left'; // 左对齐
+    context.textBaseline = 'middle'; // 垂直居中
+    
+    // 保存当前状态
+    context.save();
+    
+    // 移动到信息区域并旋转90度，保持DOUBLE_MARGIN间距对齐
+    const infoCenterX = infoStartX + infoAreaWidth / 2; // 信息区域水平中心
+    const infoCenterY = DOUBLE_MARGIN; // Y轴保持DOUBLE_MARGIN间距对齐
+    context.translate(infoCenterX, infoCenterY);
+    context.rotate(90 * Math.PI / 180); // 顺时针旋转90度
+    
+    // 计算垂直均匀分布
+    const totalAdjustedHeight = (itemCount - 1) * adjustedLineHeight; // 总间距高度
+    const startY = -totalAdjustedHeight / 2; // 从中心开始向上偏移
+    
+    // 绘制所有文本信息（垂直均匀分布）
+    infoItems.forEach((item, index) => {
       const text = `${item.label}：${item.value}`;
-      context.fillText(text, leftPadding, yOffset);
-      yOffset += infoLineHeight;
-    }
+      const y = startY + index * adjustedLineHeight;
+      
+      // 制作单位单独设置为白色和中等粗细
+      if (item.label === '制作单位') {
+        context.fillStyle = 'white';
+        context.font = '500 50px sans-serif'; // 中等粗细 (FontWeight.Medium)
+      } else {
+        context.fillStyle = 'black';
+        context.font = '50px sans-serif'; // 恢复默认字体
+      }
+      
+      context.fillText(text, 0, y);
+    });
     
-    // 6. 绘制制作单位区域 - 蓝色50%透明度背景
-    const orgAreaY = canvasHeight - orgAreaHeight;
-    context.beginPath();
-    // 使用现有的drawRoundedRect方法，只圆角底部
-    this.drawRoundedRect(context, 0, orgAreaY, canvasWidth, orgAreaHeight, radius, false, true);
-    context.fillStyle = 'rgba(0, 87, 217, 0.5)';
-    context.fill();
-    
-    // 7. 绘制制作单位文字 - 动态字体大小，白色中等字重
-    context.fillStyle = '#FFFFFF';
-    context.font = `500 ${infoFontSize}px sans-serif`; // 动态字体大小
-    const orgText = `制作单位：${watermarkInfo.organization || '应急管理部门'}`;
-    const orgY = orgAreaY + (orgAreaHeight - infoFontSize) / 2; // 垂直居中
-    context.fillText(orgText, leftPadding, orgY);
+    // 恢复状态
+    context.restore();
     
     // 恢复变换状态
     context.restore();
     
-    Logger.info(TAG_LOG, `动态适应水印绘制完成: ${canvasWidth}×${canvasHeight}, 缩放比例: ${scaleRatio.toFixed(2)}`);
+    Logger.info(TAG_LOG, `水印绘制完成: ${canvasWidth}×${canvasHeight}`);
   }
 
   /**
@@ -310,9 +383,9 @@ export class RobustWatermarkProcessor {
       { label: '天气信息', value: watermarkInfo.weather || '获取中...' },
       { label: '地点信息', value: watermarkInfo.location || '定位中...' },
       { label: '海拔信息', value: watermarkInfo.altitude || '计算中...' },
-      { label: '方位角', value: watermarkInfo.direction || '计算中...' },
-      { label: '经度', value: watermarkInfo.longitude || '计算中...' },
-      { label: '纬度', value: watermarkInfo.latitude || '获取中...' },
+      { label: '方  位  角', value: watermarkInfo.direction || '计算中...' },
+      { label: '经        度', value: watermarkInfo.longitude || '计算中...' },
+      { label: '纬        度', value: watermarkInfo.latitude || '获取中...' },
       { label: '制作单位', value: watermarkInfo.organization || '应急管理部门' }
     ];
   }
@@ -333,12 +406,18 @@ export class RobustWatermarkProcessor {
       const originalInfo: image.ImageInfo = await originalPixelMap.getImageInfo();
       const watermarkInfo: image.ImageInfo = await watermarkPixelMap.getImageInfo();
 
-      // 创建结果PixelMap - 使用最高质量配置
+      // 照片合成前调试信息 - 详细尺寸参数
+      Logger.info(TAG_LOG, `=== 照片合成前尺寸调试 ===`);
+      Logger.info(TAG_LOG, `原图尺寸: ${originalInfo.size.width}×${originalInfo.size.height}`);
+      Logger.info(TAG_LOG, `水印尺寸: ${watermarkInfo.size.width}×${watermarkInfo.size.height}`);
+
+
+      // 创建结果PixelMap - 使用最高质量配置，避免缩放
       const createOptions: image.InitializationOptions = {
         size: originalInfo.size,
         pixelFormat: image.PixelMapFormat.RGBA_8888, // 使用正确的PixelMapFormat
         alphaType: image.AlphaType.PREMUL,
-        scaleMode: image.ScaleMode.FIT_TARGET_SIZE, // 优化缩放模式
+        scaleMode: image.ScaleMode.CENTER_CROP, // 避免缩放，保持原始尺寸
         editable: true // 确保可编辑
       };
 
@@ -367,10 +446,13 @@ export class RobustWatermarkProcessor {
       
       await resultPixelMap.writePixels(resultArea);
 
-      // 计算水印位置 - 严格按照WatermarkOverlay.ets的UI规范 (左上角，位置x:2, y:2)
-      // 考虑到旋转和缩放变换，需要调整实际位置
-      const watermarkX = 2; // 左上角x坐标
-      const watermarkY = 2; // 左上角y坐标
+      // 水印位置设置在照片的左上侧
+      const watermarkX = 0; // 左上角x坐标
+      const watermarkY = 0; // 左上角y坐标
+
+      // 记录水印尺寸信息用于调试
+      Logger.info(TAG_LOG, `水印合成信息 - 原图: ${originalInfo.size.width}×${originalInfo.size.height}, 水印: ${watermarkInfo.size.width}×${watermarkInfo.size.height}`);
+      Logger.info(TAG_LOG, `水印位置: x=${watermarkX}, y=${watermarkY}, 预期比例: ${(watermarkInfo.size.width / originalInfo.size.width).toFixed(3)}x`);
 
       // 使用原生API合成水印
       await this.blendWatermark(resultPixelMap, watermarkPixelMap, watermarkX, watermarkY);
