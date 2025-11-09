@@ -57,7 +57,7 @@ struct Index {
   private windowClass = (this.context as common.UIAbilityContext).windowStage.getMainWindowSync();
   @State videoManager: VideoManager = new VideoManager(this.context);
   @State isLivePhoto: boolean = false;
-  private photoManager: PhotoManager = new PhotoManager(this.context, true, false);
+  private photoManager: PhotoManager = new PhotoManager(this.context, true);
   private previewManager: PreviewManager = new PreviewManager(() => {
     this.onPreviewStart()
   });
@@ -168,6 +168,12 @@ struct Index {
   registerApplicationStateChange() {
     this.applicationContext.on('applicationStateChange', {
       onApplicationForeground: async () => {
+        // 前台预热：刷新水印信息与底图缓存，降低首帧耗时
+        try {
+          await this.photoManager.prewarmWatermarkCaches();
+        } catch (err) {
+          Logger.warn(TAG, `前台预热失败: ${String(err)}`);
+        }
         await this.startCamera();
         // [StartExclude registerApplicationStateChange]
         this.syncButtonSettings();

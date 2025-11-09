@@ -21,10 +21,50 @@ import { Decimal } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 import { colorSpaceManager } from '@kit.ArkGraphics2D';
 import { geoLocationManager } from '@kit.LocationKit';
+import { display } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { Logger } from 'commons';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
-import { RobustWatermarkProcessor, WatermarkInfo } from '../watermark/RobustWatermarkProcessor';
+// 内联水印处理所需接口与类型
+interface WatermarkInfo {
+  readonly timestamp: string;
+  readonly weather?: string;
+  readonly location?: string;
+  readonly altitude?: string;
+  readonly direction?: string;
+  readonly longitude?: string;
+  readonly latitude?: string;
+  readonly organization?: string;
+}
+
+interface WatermarkInfoItem {
+  label: string;
+  value: string;
+}
+
+// ArkTS: avoid inline object literal types in declarations
+interface WatermarkBaseCacheEntry {
+  pixelMap: image.PixelMap;
+  expiresAt: number;
+}
+
+// Cache of dynamic info items (excluding timestamp)
+interface WatermarkDynamicInfo {
+  weather: string;
+  location: string;
+  altitude: string;
+  direction: string;
+  longitude: string;
+  latitude: string;
+  organization: string;
+}
+
+// ArkTS: 避免内联对象字面量类型，定义专用接口
+interface Size2D {
+  width: number;
+  height: number;
+}
 
 const TAG_LOG = 'PhotoManager';
 
@@ -32,26 +72,169 @@ export class PhotoManager implements OutputManager {
   output?: camera.PhotoOutput;
   isActive: boolean = true;
   context: Context;
-  isSingle: boolean = false;
   location: geoLocationManager.Location | null = null;
+  /**
+   * 编码与水印尺寸等参数常量，集中管理，便于维护
+   */
+  private readonly TARGET_PHOTO_WIDTH: number = 2160; // 预热与选择配置所期望的宽度
+  private readonly TARGET_PHOTO_HEIGHT: number = 2880; // 预热与选择配置所期望的高度
+  private readonly WATERMARK_WIDTH_RATIO: number = 0.5; // 水印占照片宽度比例（按设备像素比折算）
+  private readonly WATERMARK_HEIGHT_RATIO: number = 0.4; // 水印占照片高度比例（按设备像素比折算）
+  private readonly DEFAULT_JPEG_QUALITY: number = 90; // 默认JPEG质量，兼顾体积与耗时
+  private readonly DEFAULT_DYNAMIC_RANGE: image.PackingDynamicRange = image.PackingDynamicRange.AUTO;
+  // 复用图像打包器，减少多次创建的开销
+  private imagePacker?: image.ImagePacker;
   
   // 水印处理相关属性
-  private robustProcessor: RobustWatermarkProcessor = RobustWatermarkProcessor.getInstance();
   private enableWatermark: boolean = true;
+  
+  // 并发保护：避免同时处理多张照片
+  private isProcessingPhoto: boolean = false;
+
+  // 水印底图缓存：复用不依赖动态信息项的绘制结果（背景、徽标、标题栏等）
+  private watermarkBaseCache: Map<string, WatermarkBaseCacheEntry> = new Map();
+  private readonly watermarkBaseCacheTTL: number = 120000; // 120秒TTL
+
+  private getWatermarkBaseKey(width: number, height: number): string {
+    return `${width}x${height}`;
+  }
+
+  private purgeExpiredWatermarkBaseCache(): void {
+    const now = Date.now();
+    const entriesIter = this.watermarkBaseCache.entries();
+    for (const keyEntry of entriesIter) {
+      const key = keyEntry[0];
+      const entry = keyEntry[1];
+      if (entry.expiresAt <= now) {
+        try { entry.pixelMap.release(); } catch (_) {}
+        this.watermarkBaseCache.delete(key);
+      }
+    }
+  }
+
+  // ===== 水印信息项缓存（不含时间戳） =====
+  private watermarkInfoCacheTTL: number = 30000; // 30秒TTL
+  private cachedInfoExpiresAt: number = 0;
+  private cachedInfoValues: WatermarkDynamicInfo | null = null; // weather/location/altitude/direction/longitude/latitude/organization
+
+  /**
+   * 计算水印绘制尺寸（考虑设备像素比）
+   */
+  private computeWatermarkSize(): Size2D {
+    const displayInfo = display.getDefaultDisplaySync();
+    const pixelRatio = displayInfo.densityPixels;
+    const width = Math.round(this.TARGET_PHOTO_WIDTH * this.WATERMARK_WIDTH_RATIO / pixelRatio);
+    const height = Math.round(this.TARGET_PHOTO_HEIGHT * this.WATERMARK_HEIGHT_RATIO / pixelRatio);
+    return { width, height };
+  }
+
+  /**
+   * 预热水印动态信息项（不含时间戳），用于后续绘制复用
+   */
+  private async prewarmWatermarkInfo(): Promise<void> {
+    const values: WatermarkDynamicInfo = {
+      weather: await this.getWeatherInfo(),
+      location: await this.getLocationInfo(),
+      altitude: await this.getAltitudeInfo(),
+      direction: await this.getDirectionInfo(),
+      longitude: this.location?.longitude?.toString() || '获取中...',
+      latitude: this.location?.latitude?.toString() || '获取中...',
+      organization: '应急管理部门'
+    };
+    this.cachedInfoValues = values;
+    this.cachedInfoExpiresAt = Date.now() + this.watermarkInfoCacheTTL;
+  }
+
+  /**
+   * 预热水印底图缓存（按期望尺寸），将冷态重绘移出拍照链路
+   */
+  private async prewarmWatermarkBaseCacheForExpectedSize(): Promise<void> {
+    try {
+      // ArkTS: 禁止解构式变量声明，改为显式赋值
+      const size: Size2D = this.computeWatermarkSize();
+      const watermarkWidth = size.width;
+      const watermarkHeight = size.height;
+
+      // 若已存在缓存则跳过
+      const key = this.getWatermarkBaseKey(watermarkWidth, watermarkHeight);
+      if (this.watermarkBaseCache.has(key)) return;
+
+      const offscreenCanvas = new OffscreenCanvas(watermarkWidth, watermarkHeight);
+      const ctx2d = offscreenCanvas.getContext('2d');
+      if (!ctx2d) return;
+
+      // 使用当前（或预热后的）信息项绘制，底图快照会在方法内被缓存
+      const now = new Date();
+      const wmInfo: WatermarkInfo = {
+        timestamp: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`,
+        weather: this.cachedInfoValues?.weather || '晴朗',
+        location: this.cachedInfoValues?.location || '定位中...',
+        altitude: this.cachedInfoValues?.altitude || '计算中...',
+        direction: this.cachedInfoValues?.direction || '北偏东30°',
+        longitude: this.cachedInfoValues?.longitude || '获取中...',
+        latitude: this.cachedInfoValues?.latitude || '获取中...',
+        organization: this.cachedInfoValues?.organization || '应急管理部门'
+      };
+      await this.drawWatermarkWithCanvas(ctx2d as OffscreenCanvasRenderingContext2D, wmInfo, watermarkWidth, watermarkHeight);
+      // 无需取PixelMap；drawWatermarkWithCanvas内部已缓存底图快照
+    } catch (e) {
+      Logger.warn(TAG_LOG, `预热底图失败: ${String(e)}`);
+    }
+  }
   
   private callback: (pixelMap: image.PixelMap, url: string) => void = () => {
   };
 
-  constructor(context: Context, isActive = true, isSingle: boolean) {
+  constructor(context: Context, isActive = true) {
     this.context = context;
     this.isActive = isActive;
-    this.isSingle = isSingle;
     
     // 初始化水印处理器
     this.initializeWatermarkProcessors();
     
     // 初始化位置信息
     this.initializeLocation();
+    
+    // 启动阶段预热：缓存信息项与底图，降低首次拍摄延迟
+    this.prewarmWatermarkInfo().catch((err: Error | BusinessError) =>
+      Logger.warn(TAG_LOG, `预热水印信息失败: ${String(err)}`)
+    );
+    this.prewarmWatermarkBaseCacheForExpectedSize().catch((err: Error | BusinessError) =>
+      Logger.warn(TAG_LOG, `预热水印底图失败: ${String(err)}`)
+    );
+  }
+
+  // 获取或创建图像打包器（会话内复用）
+  /**
+   * 获取或创建 ImagePacker（会话内复用），降低编码构造开销
+   */
+  private getOrCreateImagePacker(): image.ImagePacker {
+    if (!this.imagePacker) {
+      this.imagePacker = image.createImagePacker();
+      Logger.info(TAG_LOG, 'ImagePacker 已创建并开始复用');
+    } else {
+      Logger.info(TAG_LOG, 'ImagePacker 复用现有实例');
+    }
+    return this.imagePacker;
+  }
+
+  // 在前台恢复或会话开始时触发统一预热
+  /**
+   * 在前台恢复或会话开始时统一预热水印信息与底图
+   */
+  public async prewarmWatermarkCaches(): Promise<void> {
+    try {
+      await this.prewarmWatermarkInfo();
+      Logger.info(TAG_LOG, '前台预热：水印信息项已刷新');
+    } catch (errInfo) {
+      Logger.warn(TAG_LOG, `前台预热水印信息失败: ${String(errInfo)}`);
+    }
+    try {
+      await this.prewarmWatermarkBaseCacheForExpectedSize();
+      Logger.info(TAG_LOG, '前台预热：水印底图已构建');
+    } catch (errBase) {
+      Logger.warn(TAG_LOG, `前台预热水印底图失败: ${String(errBase)}`);
+    }
   }
 
   setIsActive(isActive: boolean) {
@@ -66,13 +249,8 @@ export class PhotoManager implements OutputManager {
    * 初始化水印处理器
    */
   private initializeWatermarkProcessors(): void {
-    try {
-      // 使用稳定的水印处理器
-      this.robustProcessor = RobustWatermarkProcessor.getInstance();
-      Logger.info(TAG_LOG, '稳定水印处理器初始化成功');
-    } catch (error) {
-      Logger.error(TAG_LOG, `水印处理器初始化失败: ${JSON.stringify(error)}`);
-    }
+    // 已内置水印处理方法，无需初始化单例处理器
+    Logger.info(TAG_LOG, '水印处理方法已内置，无需单独初始化处理器');
   }
 
   /**
@@ -85,10 +263,7 @@ export class PhotoManager implements OutputManager {
   /**
    * 设置是否使用高性能模式（已废弃，保留兼容性）
    */
-  setHighPerformanceMode(enabled: boolean): void {
-    // 方法保留用于兼容性，实际不执行任何操作
-    Logger.info(TAG_LOG, `高性能模式设置已废弃: ${enabled}`);
-  }
+  // 已废弃：不再需要该方法，保留注释以说明兼容性取消
 
   async createOutput(config: CreateOutputConfig) {
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
@@ -102,6 +277,9 @@ export class PhotoManager implements OutputManager {
 
   // [Start create_photo_output]
   // Create photo output
+  /**
+   * 创建照片输出（根据设备能力选择最匹配的 Profile）
+   */
   public createPhotoOutput(cameraManager: camera.CameraManager|undefined, cameraDevice: camera.CameraDevice,
     profile: camera.Profile) {
     let cameraPhotoOutput: camera.PhotoOutput | undefined = undefined;
@@ -111,7 +289,6 @@ export class PhotoManager implements OutputManager {
     if (photoProfilesArray?.length) {
       try {
         const displayRatio = profile.size.width / profile.size.height;
-        const profileWidth = profile.size.width;
         
         // 优先选择2160×2880px分辨率（1080×1440px的2倍）
         const targetWidth = 2160;
@@ -164,6 +341,9 @@ export class PhotoManager implements OutputManager {
 
   // [Start set_photo_cb_single]
   // Set photo callback single with watermark processing
+  /**
+   * 设置单阶段拍照回调，内含水印处理与并发保护
+   */
   setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
     photoOutput.on('photoAvailable', async (errCode: BusinessError, photo: camera.Photo): Promise<void> => {
       if (errCode || photo === undefined) {
@@ -171,12 +351,22 @@ export class PhotoManager implements OutputManager {
         return;
       }
       
-      // 检查是否启用水印
-      if (this.enableWatermark) {
-        await this.processPhotoWithWatermark(context, photo);
-      } else {
-        // 不使用水印，直接保存
-        this.mediaLibSavePhotoSingle(context, photo.main);
+      // 并发保护：若已有照片在处理，忽略本次回调
+      if (this.isProcessingPhoto) {
+        Logger.warn(TAG_LOG, '已有照片正在处理，忽略本次回调');
+        return;
+      }
+      this.isProcessingPhoto = true;
+      try {
+        // 检查是否启用水印
+        if (this.enableWatermark) {
+          await this.processPhotoWithWatermark(context, photo);
+        } else {
+          // 不使用水印，直接保存
+          this.mediaLibSavePhotoSingle(context, photo.main);
+        }
+      } finally {
+        this.isProcessingPhoto = false;
       }
     });
   }
@@ -185,6 +375,9 @@ export class PhotoManager implements OutputManager {
 
   /**
    * 处理带水印的照片
+   */
+  /**
+   * 完整的带水印处理流程：获取信息 → 绘制 → 保存 → 回调
    */
   private async processPhotoWithWatermark(context: Context, photo: camera.Photo): Promise<void> {
     try {
@@ -196,21 +389,12 @@ export class PhotoManager implements OutputManager {
       let savedUri: string;
       let processedPixelMap: image.PixelMap;
       
-      // 优先使用稳定的水印处理器
-      try {
-        Logger.info(TAG_LOG, '使用稳定水印处理器');
-        processedPixelMap = await this.robustProcessor.processWatermark(photo, watermarkInfo);
-        
-        // 保存处理后的图像
-        savedUri = await this.savePixelMapToGallery(processedPixelMap, context);
-        Logger.info(TAG_LOG, `稳定水印处理成功，保存路径: ${savedUri}`);
-        
-      } catch (robustError) {
-        Logger.warn(TAG_LOG, `稳定水印处理失败: ${robustError instanceof Error ? robustError.message : String(robustError)}`);
-        
-        // 降级处理：直接保存原图
-        throw new Error('水印处理器不可用，保存原图');
-      }
+      Logger.info(TAG_LOG, '使用内置水印处理方法');
+      processedPixelMap = await this.processWatermark(photo, watermarkInfo);
+      
+      // 保存处理后的图像
+      savedUri = await this.savePixelMapToGallery(processedPixelMap, context);
+      Logger.info(TAG_LOG, `水印处理成功，保存路径: ${savedUri}`);
       
       // 调用回调函数
       this.callback(processedPixelMap, savedUri);
@@ -238,49 +422,25 @@ export class PhotoManager implements OutputManager {
     const now = new Date();
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     
+    // 优先使用缓存的动态信息项（不含时间戳），过期则刷新
+    const nowMs = Date.now();
+    if (!this.cachedInfoValues || this.cachedInfoExpiresAt <= nowMs) {
+      await this.prewarmWatermarkInfo();
+    }
+    const infoValues = this.cachedInfoValues!;
     return {
       timestamp,
-      weather: await this.getWeatherInfo(),
-      location: await this.getLocationInfo(),
-      altitude: await this.getAltitudeInfo(),
-      direction: await this.getDirectionInfo(),
-      longitude: this.location?.longitude?.toString() || '获取中...',
-      latitude: this.location?.latitude?.toString() || '获取中...',
-      organization: '应急管理部门'
+      weather: infoValues.weather,
+      location: infoValues.location,
+      altitude: infoValues.altitude,
+      direction: infoValues.direction,
+      longitude: infoValues.longitude,
+      latitude: infoValues.latitude,
+      organization: infoValues.organization
     };
   }
 
-  /**
-   * 从Photo对象创建PixelMap
-   */
-  private async createPixelMapFromPhoto(photo: camera.Photo): Promise<image.PixelMap> {
-    const imageObj: image.Image = photo.main;
-    
-    const component: image.Component = await new Promise<image.Component>((resolve, reject) => {
-      imageObj.getComponent(image.ComponentType.JPEG, (err, comp) => {
-        if (err || !comp) {
-          reject(err || new Error('Failed to get image component'));
-        } else {
-          resolve(comp);
-        }
-      });
-    });
-    
-    const imageSource: image.ImageSource = image.createImageSource(component.byteBuffer);
-    
-    try {
-      const pixelMap: image.PixelMap = await imageSource.createPixelMap({
-        desiredSize: { width: 0, height: 0 },
-        desiredRegion: { size: { width: 0, height: 0 }, x: 0, y: 0 },
-        desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
-        editable: false
-      });
-      
-      return pixelMap;
-    } finally {
-      imageSource.release();
-    }
-  }
+  // 已移除：createPixelMapFromPhoto（使用 getPhotoPixelMap 统一实现）
 
   /**
    * 获取天气信息
@@ -357,22 +517,27 @@ export class PhotoManager implements OutputManager {
   }
 
   /**
-   * 保存PixelMap到相册
+   * 保存 PixelMap 到相册
+   *
+   * 步骤：
+   * 1) 使用复用的 ImagePacker 将 PixelMap 编码为 JPEG buffer；
+   * 2) 通过 MediaAssetChangeRequest 写入相册，并返回保存的 URI；
+   * 3) 记录阶段日志便于性能追踪。
    */
   async savePixelMapToGallery(pixelMap: image.PixelMap, context: Context): Promise<string> {
     try {
-      // 将PixelMap转换为JPEG格式的ArrayBuffer
-      const imagePackerApi = image.createImagePacker();
+      // 将PixelMap转换为JPEG格式的ArrayBuffer（复用 ImagePacker）
+      const imagePackerApi = this.getOrCreateImagePacker();
       
-      // 优化压缩参数以提升图像质量
+      // 编码参数：集中在类常量中管理，便于统一调整
       const packOpts: image.PackingOption = {
         format: 'image/jpeg',
-        quality: 98, // 提升质量到98%，确保高质量输出
-        desiredDynamicRange: image.PackingDynamicRange.AUTO // 自动HDR处理
+        quality: this.DEFAULT_JPEG_QUALITY, // 质量 90%，平衡体积与耗时
+        desiredDynamicRange: this.DEFAULT_DYNAMIC_RANGE // 自动动态范围处理
       };
       
       const buffer: ArrayBuffer = await imagePackerApi.packing(pixelMap, packOpts);
-      imagePackerApi.release();
+      Logger.info(TAG_LOG, 'ImagePacker 复用执行 packing 完成');
       
       if (!buffer) {
         throw new Error('PixelMap转换为buffer失败');
@@ -416,6 +581,7 @@ export class PhotoManager implements OutputManager {
     }
     // Only support single-stage photo mode
     this.output?.off('photoAssetAvailable');
+    this.output?.off('photoAvailable');
     this.setPhotoOutputCbSingle(this.output, this.context);
   }
 
@@ -494,13 +660,7 @@ export class PhotoManager implements OutputManager {
     }
   }
 
-  public setFocusPoint(photoSession: camera.PhotoSession, focusPoint: camera.Point): void {
-    try {
-      photoSession.setFocusPoint(focusPoint);
-    } catch (error) {
-      Logger.error(TAG_LOG, `The setFocusPoint call failed. error code: ${error.code}`);
-    }
-  }
+  // 已移除：setFocusPoint 方法由 CameraManager 统一对外暴露
 
   public setPhotoZoomRatio(photoSession: camera.PhotoSession, zoomRatio?: number) {
     let photoZoomRatio = 0;
@@ -521,15 +681,7 @@ export class PhotoManager implements OutputManager {
     }
   }
 
-  getSupportedColorSpaces(session: camera.PhotoSession): Array<colorSpaceManager.ColorSpace> {
-    let colorSpaces: Array<colorSpaceManager.ColorSpace> = [];
-    try {
-      colorSpaces = session.getSupportedColorSpaces();
-    } catch (error) {
-      Logger.error(TAG_LOG, `The getSupportedColorSpaces call failed. error code: ${error.code}`);
-    }
-    return colorSpaces;
-  }
+  // 已移除：getSupportedColorSpaces 不再对外提供封装
 
   // [Start get_photo_rotation]
   // Get photo rotation
@@ -591,13 +743,29 @@ export class PhotoManager implements OutputManager {
 
   private getPhotoDegree() {
     const promise: Promise<number> = new Promise(resolve => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(0);
+        }
+      }, 250);
       try {
         sensor.once(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
-          let degree = this.calculateDeviceDegree(data.x, data.y, data.z);
-          resolve(degree);
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            const degree = this.calculateDeviceDegree(data.x, data.y, data.z);
+            resolve(degree);
+          }
         });
       } catch (exception) {
         Logger.error(TAG_LOG, `getPhotoDegree failed, code is ${exception.code}, message is ${exception.message}`);
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(0);
+        }
       }
     })
     return promise;
@@ -631,6 +799,9 @@ export class PhotoManager implements OutputManager {
 
   // [Start photo_release]
   // Release photo and watermark processors
+  /**
+   * 释放照片输出与相关资源：解绑事件、清空缓存、释放编码器
+   */
   async release() {
     try {
       await this.output?.release();
@@ -638,24 +809,39 @@ export class PhotoManager implements OutputManager {
       Logger.error(TAG_LOG, `release failed, code is ${exception.code}, message is ${exception.message}`);
     }
     
-    // 清理水印处理器资源
-    try {
-      // RobustWatermarkProcessor是单例，无需显式销毁
-      Logger.info(TAG_LOG, '水印处理器资源已清理');
-    } catch (error) {
-      Logger.error(TAG_LOG, `清理水印处理器失败: ${JSON.stringify(error)}`);
-    }
+    // 清理水印处理相关资源（当前为内联方法，无需显式销毁）
+    Logger.info(TAG_LOG, '水印处理资源已清理');
     
-    if (this.isSingle) {
-      this.output?.off('photoAvailable');
-    } else {
-      this.output?.off('photoAssetAvailable');
+    // 统一解绑所有可能事件，避免残留监听
+    this.output?.off('photoAvailable');
+    this.output?.off('photoAssetAvailable');
+    
+    // 清理水印底图缓存
+    const entriesIter = this.watermarkBaseCache.entries();
+    for (const keyEntry of entriesIter) {
+      const entry = keyEntry[1];
+      try { entry.pixelMap.release(); } catch (_) {}
+    }
+    this.watermarkBaseCache.clear();
+
+    // 释放复用的 ImagePacker
+    if (this.imagePacker) {
+      try {
+        this.imagePacker.release();
+        Logger.info(TAG_LOG, 'ImagePacker 已释放');
+      } catch (error) {
+        Logger.error(TAG_LOG, `ImagePacker 释放失败: ${error?.code ?? ''} ${error?.message ?? ''}`);
+      }
+      this.imagePacker = undefined;
     }
     this.output = undefined;
   }
 
   /**
    * 初始化位置信息
+   */
+  /**
+   * 初始化位置信息（单次请求），失败时降级为默认值
    */
   private async initializeLocation(): Promise<void> {
     try {
@@ -684,4 +870,396 @@ export class PhotoManager implements OutputManager {
   }
 
   // [End photo_release]
+
+  /**
+   * ===== 内联水印处理方法（来自 RobustWatermarkProcessor） =====
+   */
+
+  // 主要水印处理方法 - 使用原生API确保兼容性
+  private async processWatermark(photo: camera.Photo, watermarkInfo: WatermarkInfo): Promise<image.PixelMap> {
+    Logger.info(TAG_LOG, '开始稳定水印处理流程');
+    
+    let originalPixelMap: image.PixelMap | null = null;
+    let watermarkPixelMap: image.PixelMap | null = null;
+    
+    try {
+      // 1. 并行获取原始图像和设备信息
+      const parallelResults1 = await Promise.all([
+        this.getPhotoPixelMap(photo),
+        Promise.resolve(display.getDefaultDisplaySync())
+      ]);
+      originalPixelMap = parallelResults1[0];
+      const displayInfo = parallelResults1[1];
+      
+      // 2. 并行创建水印图像和获取原图信息
+      const parallelResults2 = await Promise.all([
+        this.createWatermarkPixelMap(watermarkInfo, originalPixelMap, displayInfo),
+        originalPixelMap.getImageInfo()
+      ]);
+      watermarkPixelMap = parallelResults2[0];
+      const originalInfo = parallelResults2[1];
+
+      // 3. 合成图像
+      const resultPixelMap: image.PixelMap = await this.compositeImages(originalPixelMap, watermarkPixelMap, originalInfo);
+      
+      return resultPixelMap;
+    } catch (err) {
+      Logger.error(TAG_LOG, `水印处理失败: ${err instanceof Error ? err.message : String(err)}`);
+      
+      // 降级处理：返回原图（使用已获取的原图或重新获取）
+      if (originalPixelMap) {
+        Logger.info(TAG_LOG, '使用降级方案：返回已获取的原始图像');
+        return originalPixelMap;
+      }
+      
+      try {
+        const fallbackPixelMap: image.PixelMap = await this.getPhotoPixelMap(photo);
+        Logger.info(TAG_LOG, '使用降级方案：重新获取原始图像');
+        return fallbackPixelMap;
+      } catch (fallbackError) {
+        Logger.error(TAG_LOG, `降级处理也失败: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
+        throw new Error('水印处理完全失败');
+      }
+    } finally {
+      if (watermarkPixelMap) {
+        watermarkPixelMap.release();
+      }
+    }
+  }
+
+  // 获取照片的PixelMap
+  private async getPhotoPixelMap(photo: camera.Photo): Promise<image.PixelMap> {
+    const imageObj: image.Image = photo.main;
+    let imageSource: image.ImageSource | null = null;
+    
+    try {
+      const component: image.Component = await new Promise<image.Component>((resolve, reject) => {
+        imageObj.getComponent(image.ComponentType.JPEG, (err, comp) => {
+          err ? reject(err) : comp ? resolve(comp) : reject(new Error('Failed to get image component'));
+        });
+      });
+      
+      imageSource = image.createImageSource(component.byteBuffer);
+      
+      const pixelMap: image.PixelMap = await imageSource.createPixelMap({
+        desiredSize: { width: 0, height: 0 },
+        desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
+        editable: true
+      });
+      
+      return pixelMap;
+    } catch (error) {
+      Logger.error(TAG_LOG, `获取照片PixelMap失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('无法获取照片数据');
+    } finally {
+      if (imageSource) {
+        imageSource.release();
+      }
+    }
+  }
+
+  // 创建水印PixelMap
+  private async createWatermarkPixelMap(watermarkInfo: WatermarkInfo, originalPixelMap: image.PixelMap, displayInfo: display.Display): Promise<image.PixelMap> {
+    try {
+      const imageInfo = await originalPixelMap.getImageInfo();
+      const photoWidth = imageInfo.size.width;
+      const photoHeight = imageInfo.size.height;
+      const pixelRatio = displayInfo.densityPixels;
+
+      const WATERMARK_WIDTH_RATIO = 0.5;
+      const WATERMARK_HEIGHT_RATIO = 0.4;
+      
+      const watermarkWidth = Math.round(photoWidth * WATERMARK_WIDTH_RATIO / pixelRatio);
+      const watermarkHeight = Math.round(photoHeight * WATERMARK_HEIGHT_RATIO / pixelRatio);
+
+      const offscreenCanvas = new OffscreenCanvas(watermarkWidth, watermarkHeight);
+      const context2d = offscreenCanvas.getContext('2d');
+      
+      if (!context2d) {
+        throw new Error('无法获取Canvas上下文');
+      }
+
+      await this.drawWatermarkWithCanvas(context2d as OffscreenCanvasRenderingContext2D, watermarkInfo, watermarkWidth, watermarkHeight);
+
+      const watermarkPixelMap: image.PixelMap = await (context2d as OffscreenCanvasRenderingContext2D).getPixelMap(0, 0, watermarkWidth, watermarkHeight);
+
+      return watermarkPixelMap;
+    } catch (error) {
+      Logger.error(TAG_LOG, `创建水印PixelMap失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('无法创建水印');
+    }
+  }
+
+  // 使用Canvas绘制水印内容
+  private async drawWatermarkWithCanvas(context2d: OffscreenCanvasRenderingContext2D, 
+                                       watermarkInfo: WatermarkInfo, 
+                                       canvasWidth: number , 
+                                       canvasHeight: number ): Promise<void> {
+    context2d.clearRect(0, 0, canvasWidth, canvasHeight);
+    context2d.imageSmoothingEnabled = true;
+    context2d.imageSmoothingQuality = 'high';
+    context2d.textAlign = 'left';
+    context2d.textBaseline = 'top';
+    context2d.save();
+
+    Logger.info(TAG_LOG, `水印绘制尺寸: ${canvasWidth}×${canvasHeight}`);
+
+    // 先尝试复用静态底图缓存（背景、徽标、标题栏）
+    this.purgeExpiredWatermarkBaseCache();
+    const baseKey = this.getWatermarkBaseKey(canvasWidth, canvasHeight);
+    const baseEntry = this.watermarkBaseCache.get(baseKey);
+
+    const MARGIN = 4;
+    const DOUBLE_MARGIN = MARGIN * 2;
+    const radius = 8;
+    const orgWidth = canvasWidth * 0.1;
+    const titleBarWidth = canvasWidth * 0.3;
+    const titleBarX = canvasWidth - titleBarWidth - MARGIN;
+    const orgX = MARGIN;
+    const orgHeight = canvasHeight - DOUBLE_MARGIN;
+    const titleBarHeight = canvasHeight - DOUBLE_MARGIN;
+    const orgY = MARGIN;
+    const titleBarY = MARGIN;
+
+    if (baseEntry) {
+      // 直接绘制缓存的底图
+      Logger.info(TAG_LOG, `底图缓存命中: key=${baseKey}`);
+      context2d.drawImage(baseEntry.pixelMap, 0, 0, canvasWidth, canvasHeight);
+    } else {
+      // 绘制底图（不包含动态信息项）
+      Logger.info(TAG_LOG, `底图缓存未命中，重绘底图: key=${baseKey}`);
+      context2d.translate(0, 0);
+      context2d.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.drawRoundedRect(context2d, 0, 0, canvasWidth, canvasHeight, radius);
+      context2d.fill();
+
+      context2d.fillStyle = 'rgba(0, 87, 217, 0.5)';
+      this.drawRoundedRect(context2d, orgX, orgY, orgWidth, orgHeight, 0);
+      context2d.fill();
+
+      context2d.fillStyle = 'rgba(0, 87, 217, 0.5)';
+      this.drawRoundedRect(context2d, titleBarX, titleBarY, titleBarWidth, titleBarHeight, 0);
+      context2d.fill();
+
+      const watermarkLogo = await this.loadWatermarkLogo();
+      if (watermarkLogo) {
+        const logoInfo = await watermarkLogo.getImageInfo();
+        const maxLogoWidth = titleBarHeight - DOUBLE_MARGIN;
+        const maxLogoHeight = titleBarWidth - DOUBLE_MARGIN;
+        const widthRatio = maxLogoWidth / logoInfo.size.width;
+        const heightRatio = maxLogoHeight / logoInfo.size.height;
+        const scaleRatio = Math.min(widthRatio, heightRatio);
+        const logoWidth = logoInfo.size.width * scaleRatio;
+        const logoHeight = logoInfo.size.height * scaleRatio;
+        const logoX = titleBarX + (titleBarWidth - logoHeight) / 2;
+        const logoY = titleBarY + MARGIN;
+        context2d.save();
+        context2d.translate(logoX + logoHeight / 2, logoY + logoWidth / 2);
+        context2d.rotate(90 * Math.PI / 180);
+        context2d.drawImage(watermarkLogo, -logoWidth / 2, -logoHeight / 2, logoWidth, logoHeight);
+        context2d.restore();
+
+        // 静态标题文本
+        context2d.fillStyle = 'white';
+        context2d.font = '80px sans-serif';
+        context2d.textAlign = 'center';
+        context2d.textBaseline = 'middle';
+        const remainingHeight = titleBarHeight - (logoY + logoWidth);
+        const titleTextX = titleBarX + titleBarWidth / 2;
+        const titleTextY = logoY + logoWidth + remainingHeight / 2;
+        context2d.save();
+        context2d.translate(titleTextX, titleTextY);
+        context2d.rotate(90 * Math.PI / 180);
+        context2d.fillText('灭火救援灾害现场', 0, 0);
+        context2d.restore();
+
+        // 释放徽标像素图资源，避免内存泄漏
+        watermarkLogo.release();
+      }
+
+      // 将底图快照缓存（TTL）
+      const baseSnapshot: image.PixelMap = await (context2d as OffscreenCanvasRenderingContext2D)
+        .getPixelMap(0, 0, canvasWidth, canvasHeight);
+      this.watermarkBaseCache.set(baseKey, { pixelMap: baseSnapshot, expiresAt: Date.now() + this.watermarkBaseCacheTTL });
+      Logger.info(TAG_LOG, `底图缓存构建完成: key=${baseKey}, ttlMs=${this.watermarkBaseCacheTTL}`);
+    }
+
+    // 叠加动态信息项文本
+    const infoItems = this.getWatermarkInfoItems(watermarkInfo);
+    const infoAreaWidth = titleBarX - MARGIN;
+    const itemCount = infoItems.length;
+    const availableHeight = infoAreaWidth;
+    const adjustedLineHeight = availableHeight / itemCount;
+    const infoCenterX = MARGIN + infoAreaWidth / 2;
+    const infoCenterY = DOUBLE_MARGIN;
+    const totalAdjustedHeight = (itemCount - 1) * adjustedLineHeight;
+    const startY = -totalAdjustedHeight / 2;
+
+    context2d.save();
+    context2d.translate(infoCenterX, infoCenterY);
+    context2d.rotate(90 * Math.PI / 180);
+    context2d.textAlign = 'left';
+    context2d.textBaseline = 'middle';
+
+    infoItems.forEach((item, index) => {
+      const text = `${item.label}：${item.value}`;
+      const y = startY + index * adjustedLineHeight;
+      if (item.label === '制作单位') {
+        context2d.fillStyle = 'white';
+        context2d.font = '500 50px sans-serif';
+      } else {
+        context2d.fillStyle = 'black';
+        context2d.font = '50px sans-serif';
+      }
+      context2d.fillText(text, 0, y);
+    });
+    context2d.restore();
+
+    context2d.restore();
+    Logger.info(TAG_LOG, `水印绘制完成: ${canvasWidth}×${canvasHeight}`);
+  }
+
+  private getWatermarkInfoItems(watermarkInfo: WatermarkInfo): Array<WatermarkInfoItem> {
+    return [
+      { label: '拍摄时间', value: watermarkInfo.timestamp },
+      { label: '天气信息', value: watermarkInfo.weather || '获取中...' },
+      { label: '地点信息', value: watermarkInfo.location || '定位中...' },
+      { label: '海拔信息', value: watermarkInfo.altitude || '计算中...' },
+      { label: '方  位  角', value: watermarkInfo.direction || '计算中...' },
+      { label: '经        度', value: watermarkInfo.longitude || '计算中...' },
+      { label: '纬        度', value: watermarkInfo.latitude || '获取中...' },
+      { label: '制作单位', value: watermarkInfo.organization || '应急管理部门' }
+    ];
+  }
+
+  private async compositeImages(originalPixelMap: image.PixelMap, watermarkPixelMap: image.PixelMap, originalInfo: image.ImageInfo): Promise<image.PixelMap> {
+    try {
+      // 直接在原图上就地混合水印，避免额外拷贝
+      const watermarkX = 0;
+      const watermarkY = 0;
+      await this.blendWatermark(originalPixelMap, watermarkPixelMap, watermarkX, watermarkY);
+      return originalPixelMap;
+    } catch (error) {
+      Logger.error(TAG_LOG, `图像合成失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('无法合成图像');
+    }
+  }
+
+  private async blendWatermark(targetPixelMap: image.PixelMap, watermarkPixelMap: image.PixelMap, x: number, y: number): Promise<void> {
+    try {
+      const imageInfos = await Promise.all([
+        targetPixelMap.getImageInfo(),
+        watermarkPixelMap.getImageInfo()
+      ]);
+      const targetInfo = imageInfos[0];
+      const watermarkInfoRes = imageInfos[1];
+
+      const targetWidth = targetInfo.size.width;
+      const targetHeight = targetInfo.size.height;
+      const watermarkWidth = watermarkInfoRes.size.width;
+      const watermarkHeight = watermarkInfoRes.size.height;
+
+      const startX = Math.max(x, 0);
+      const startY = Math.max(y, 0);
+      const endX = Math.min(x + watermarkWidth, targetWidth);
+      const endY = Math.min(y + watermarkHeight, targetHeight);
+
+      if (startX >= endX || startY >= endY) {
+        Logger.warn(TAG_LOG, '水印区域超出目标图像边界，跳过混合');
+        return;
+      }
+
+      const blendWidth = endX - startX;
+      const blendHeight = endY - startY;
+      
+      const targetBuffer = new ArrayBuffer(blendWidth * blendHeight * 4);
+      const targetArea: image.PositionArea = {
+        pixels: targetBuffer,
+        offset: 0,
+        stride: blendWidth * 4,
+        region: { size: { width: blendWidth, height: blendHeight }, x: startX, y: startY }
+      };
+      await targetPixelMap.readPixels(targetArea);
+      const targetView = new Uint8Array(targetBuffer);
+
+      const watermarkBuffer = new ArrayBuffer(blendWidth * blendHeight * 4);
+      const watermarkArea: image.PositionArea = {
+        pixels: watermarkBuffer,
+        offset: 0,
+        stride: blendWidth * 4,
+        region: { size: { width: blendWidth, height: blendHeight }, x: startX - x, y: startY - y }
+      };
+      await watermarkPixelMap.readPixels(watermarkArea);
+      const watermarkView = new Uint8Array(watermarkBuffer);
+
+      for (let localY = 0; localY < blendHeight; localY++) {
+        for (let localX = 0; localX < blendWidth; localX++) {
+          const targetIndex = (localY * blendWidth + localX) * 4;
+          const watermarkIndex = targetIndex;
+
+          const alpha = watermarkView[watermarkIndex + 3] / 255.0;
+          if (alpha < 0.01) continue;
+          const invAlpha = 1.0 - alpha;
+
+          targetView[targetIndex] = (targetView[targetIndex] * invAlpha + watermarkView[watermarkIndex] * alpha + 0.5) | 0;
+          targetView[targetIndex + 1] = (targetView[targetIndex + 1] * invAlpha + watermarkView[watermarkIndex + 1] * alpha + 0.5) | 0;
+          targetView[targetIndex + 2] = (targetView[targetIndex + 2] * invAlpha + watermarkView[watermarkIndex + 2] * alpha + 0.5) | 0;
+        }
+      }
+
+      const writeArea: image.PositionArea = {
+        pixels: targetBuffer,
+        offset: 0,
+        stride: blendWidth * 4,
+        region: { size: { width: blendWidth, height: blendHeight }, x: startX, y: startY }
+      };
+      await targetPixelMap.writePixels(writeArea);
+    } catch (error) {
+      Logger.error(TAG_LOG, `水印混合失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error('无法混合水印');
+    }
+  }
+
+  private drawRoundedRect(context2d: OffscreenCanvasRenderingContext2D, x: number, y: number, 
+                         width: number, height: number, radius: number): void {
+    context2d.beginPath();
+    
+    if (radius > 0) {
+      const x1 = x;
+      const y1 = y;
+      const x2 = x + width;
+      const y2 = y + height;
+      const r = radius;
+      
+      context2d.moveTo(x1 + r, y1);
+      context2d.lineTo(x2 - r, y1);
+      context2d.quadraticCurveTo(x2, y1, x2, y1 + r);
+      context2d.lineTo(x2, y2 - r);
+      context2d.quadraticCurveTo(x2, y2, x2 - r, y2);
+      context2d.lineTo(x1 + r, y2);
+      context2d.quadraticCurveTo(x1, y2, x1, y2 - r);
+      context2d.lineTo(x1, y1 + r);
+      context2d.quadraticCurveTo(x1, y1, x1 + r, y1);
+    } else {
+      context2d.rect(x, y, width, height);
+    }
+    
+    context2d.closePath();
+  }
+
+  private async loadWatermarkLogo(): Promise<image.PixelMap | null> {
+    try {
+      const ctx = this.context as common.UIAbilityContext;
+      const resourceManager = ctx.resourceManager;
+      const imageBuffer: Uint8Array = await resourceManager.getMediaContent($r('app.media.watermark_logo'));
+      const imageSource: image.ImageSource = image.createImageSource(imageBuffer.buffer);
+      const pixelMap: image.PixelMap = await imageSource.createPixelMap();
+      // 及时释放ImageSource资源
+      imageSource.release();
+      return pixelMap;
+    } catch (error) {
+      Logger.error(TAG_LOG, `加载水印徽章失败: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
 }
