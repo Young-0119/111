@@ -41,6 +41,13 @@ export struct WatermarkOverlay {
   aboutToAppear() {
     this.loadOrganization();
     this.updateTimestamp();
+    // 调试信息：显示实际渲染尺寸和预览屏尺寸
+    Logger.debug('WatermarkOverlay', `预览屏尺寸: ${this.previewWidth}x${this.previewHeight}, 水印渲染尺寸: ${this.getWatermarkWidth()}x${this.getWatermarkHeight()}`);
+  }
+
+  onPageShow() {
+    // 页面显示时输出调试信息
+    Logger.debug('WatermarkOverlay', `WatermarkOverlay显示 - 预览屏尺寸: ${this.previewWidth}x${this.previewHeight}, 水印渲染尺寸: ${this.getWatermarkWidth()}x${this.getWatermarkHeight()}`);
   }
   
   private getCurrentTimestamp(): string {

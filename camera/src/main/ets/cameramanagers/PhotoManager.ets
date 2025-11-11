@@ -44,9 +44,21 @@ interface WatermarkInfoItem {
 }
 
 // ArkTS: avoid inline object literal types in declarations
+interface WatermarkBaseMetrics {
+  // 中部信息区
+  itemHeight: number;
+  valueFontSize: number;
+  maxLabelWidth: number;
+  valueX: number;
+  valueMaxWidth: number;
+  infoItemsCount: number;
+  infoItemsTextY: Array<number>;
+}
+
 interface WatermarkBaseCacheEntry {
   pixelMap: image.PixelMap;
   expiresAt: number;
+  metrics: WatermarkBaseMetrics;
 }
 
 // Cache of dynamic info items (excluding timestamp)
@@ -66,6 +78,22 @@ interface Size2D {
   height: number;
 }
 
+// ArkTS: 为静态底图布局参数定义显式接口，避免内联对象类型
+interface WatermarkBaseLayout {
+  MARGIN: number;
+  DOUBLE_MARGIN: number;
+  radius: number;
+  topRectX: number;
+  topRectY: number;
+  topRectWidth: number;
+  topRectHeight: number;
+  bottomRegionHeight: number;
+  infoRegionTop: number;
+  infoRegionHeight: number;
+  itemCount: number;
+  infoItems: Array<WatermarkInfoItem>;
+}
+
 const TAG_LOG = 'PhotoManager';
 
 export class PhotoManager implements OutputManager {
@@ -76,11 +104,11 @@ export class PhotoManager implements OutputManager {
   /**
    * 编码与水印尺寸等参数常量，集中管理，便于维护
    */
-  private readonly TARGET_PHOTO_WIDTH: number = 2160; // 预热与选择配置所期望的宽度
-  private readonly TARGET_PHOTO_HEIGHT: number = 2880; // 预热与选择配置所期望的高度
-  private readonly WATERMARK_WIDTH_RATIO: number = 0.5; // 水印占照片宽度比例（按设备像素比折算）
-  private readonly WATERMARK_HEIGHT_RATIO: number = 0.4; // 水印占照片高度比例（按设备像素比折算）
-  private readonly DEFAULT_JPEG_QUALITY: number = 90; // 默认JPEG质量，兼顾体积与耗时
+  private readonly TARGET_PHOTO_WIDTH: number = 2880; // 预热与选择配置所期望的宽度
+  private readonly TARGET_PHOTO_HEIGHT: number = 2160; // 预热与选择配置所期望的高度
+  private readonly WATERMARK_WIDTH_RATIO: number = 0.4; // 水印占照片宽度比例（按设备像素比折算）
+  private readonly WATERMARK_HEIGHT_RATIO: number = 0.5; // 水印占照片高度比例（按设备像素比折算）
+  private readonly DEFAULT_JPEG_QUALITY: number = 100; // 默认JPEG质量，兼顾体积与耗时
   private readonly DEFAULT_DYNAMIC_RANGE: image.PackingDynamicRange = image.PackingDynamicRange.AUTO;
   // 复用图像打包器，减少多次创建的开销
   private imagePacker?: image.ImagePacker;
@@ -95,8 +123,9 @@ export class PhotoManager implements OutputManager {
   private watermarkBaseCache: Map<string, WatermarkBaseCacheEntry> = new Map();
   private readonly watermarkBaseCacheTTL: number = 120000; // 120秒TTL
 
-  private getWatermarkBaseKey(width: number, height: number): string {
-    return `${width}x${height}`;
+  private getWatermarkBaseKey(width: number, height: number, organization: string): string {
+    // 组织名称纳入缓存键，确保底部“制作单位”值静态化且正确复用
+    return `${width}x${height}|org=${organization}`;
   }
 
   private purgeExpiredWatermarkBaseCache(): void {
@@ -125,6 +154,11 @@ export class PhotoManager implements OutputManager {
     const pixelRatio = displayInfo.densityPixels;
     const width = Math.round(this.TARGET_PHOTO_WIDTH * this.WATERMARK_WIDTH_RATIO / pixelRatio);
     const height = Math.round(this.TARGET_PHOTO_HEIGHT * this.WATERMARK_HEIGHT_RATIO / pixelRatio);
+    
+    // 调试信息：预热阶段的水印尺寸计算
+    Logger.debug(TAG_LOG, `预热阶段水印尺寸计算: 宽度=${width} (${this.TARGET_PHOTO_WIDTH} × ${this.WATERMARK_WIDTH_RATIO} / ${pixelRatio})`);
+    Logger.debug(TAG_LOG, `预热阶段水印尺寸计算: 高度=${height} (${this.TARGET_PHOTO_HEIGHT} × ${this.WATERMARK_HEIGHT_RATIO} / ${pixelRatio})`);
+    
     return { width, height };
   }
 
@@ -156,7 +190,8 @@ export class PhotoManager implements OutputManager {
       const watermarkHeight = size.height;
 
       // 若已存在缓存则跳过
-      const key = this.getWatermarkBaseKey(watermarkWidth, watermarkHeight);
+      const orgForKey = this.cachedInfoValues?.organization || '应急管理部门';
+      const key = this.getWatermarkBaseKey(watermarkWidth, watermarkHeight, orgForKey);
       if (this.watermarkBaseCache.has(key)) return;
 
       const offscreenCanvas = new OffscreenCanvas(watermarkWidth, watermarkHeight);
@@ -289,38 +324,33 @@ export class PhotoManager implements OutputManager {
     if (photoProfilesArray?.length) {
       try {
         const displayRatio = profile.size.width / profile.size.height;
-        
-        // 优先选择2160×2880px分辨率（1080×1440px的2倍）
-        const targetWidth = 2160;
-        const targetHeight = 2880;
-        
-        const photoProfile = photoProfilesArray
-          .filter(pf => {
-            const pfDisplayRatio = pf.size.width / pf.size.height;
-            return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
-              pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
-          })
-          .sort((a, b) => {
-            // 首先优先选择目标分辨率2160×2880px
-            const aIsTarget = (a.size.width === targetWidth && a.size.height === targetHeight);
-            const bIsTarget = (b.size.width === targetWidth && b.size.height === targetHeight);
-            
-            if (aIsTarget && !bIsTarget) return -1;
-            if (!aIsTarget && bIsTarget) return 1;
-            
-            // 如果都不是目标分辨率，则按与目标分辨率的距离排序
-            const aDistance = Math.abs(a.size.width - targetWidth) + Math.abs(a.size.height - targetHeight);
-            const bDistance = Math.abs(b.size.width - targetWidth) + Math.abs(b.size.height - targetHeight);
-            
-            if (aDistance !== bDistance) {
-              return aDistance - bDistance; // 升序，距离越小越优先
-            }
-            
-            // 距离相同时，按总像素数排序（优先选择高分辨率）
-            const aPixels = a.size.width * a.size.height;
-            const bPixels = b.size.width * b.size.height;
-            return bPixels - aPixels; // 降序，高分辨率优先
-          })[0]; // 取第一个（最佳匹配）
+        // 固定目标分辨率（限制在 2880×2160），并设置合理回退策略
+        const targetWidth = this.TARGET_PHOTO_WIDTH;
+        const targetHeight = this.TARGET_PHOTO_HEIGHT;
+
+        const candidates = photoProfilesArray.filter(pf => {
+          const pfDisplayRatio = pf.size.width / pf.size.height;
+          return Math.abs(pfDisplayRatio - displayRatio) <= CameraConstant.PROFILE_DIFFERENCE &&
+            pf.format === camera.CameraFormat.CAMERA_FORMAT_JPEG;
+        });
+
+        let photoProfile: camera.Profile | undefined = candidates.find(pf =>
+          pf.size.width === targetWidth && pf.size.height === targetHeight
+        );
+
+        if (!photoProfile) {
+          // 优先选择不超过目标分辨率的“最大项”（清晰度尽量高但受限于目标）
+          const notExceed = candidates.filter(pf => pf.size.width <= targetWidth && pf.size.height <= targetHeight)
+            .sort((a, b) => (b.size.width * b.size.height) - (a.size.width * a.size.height));
+          if (notExceed.length > 0) {
+            photoProfile = notExceed[0];
+          } else {
+            // 若无不超过目标的项，再选择刚好高于目标的“最小项”，避免跳到过高分辨率
+            const exceed = candidates.filter(pf => pf.size.width >= targetWidth && pf.size.height >= targetHeight)
+              .sort((a, b) => (a.size.width * a.size.height) - (b.size.width * b.size.height));
+            photoProfile = exceed[0];
+          }
+        }
           
         if (!photoProfile) {
           Logger.error(TAG_LOG, 'Failed to get photo profile');
@@ -684,15 +714,11 @@ export class PhotoManager implements OutputManager {
   // 已移除：getSupportedColorSpaces 不再对外提供封装
 
   // [Start get_photo_rotation]
-  // Get photo rotation
+  // Get photo rotation - 修正逆时针旋转90°问题
   getPhotoRotation(photoOutput: camera.PhotoOutput, deviceDegree: number): camera.ImageRotation {
-    let photoRotation: camera.ImageRotation = camera.ImageRotation.ROTATION_0;
-    try {
-      photoRotation = photoOutput.getPhotoRotation(deviceDegree);
-    } catch (error) {
-      Logger.error(TAG_LOG, `The photoOutput.getPhotoRotation call failed. error code: ${error.code}`);
-    }
-    return photoRotation;
+    // 补偿270°顺时针旋转（相当于逆时针90°），修正保存到相册时的逆时针旋转问题
+    Logger.info(TAG_LOG, `修正旋转配置，设备方向: ${deviceDegree}度，补偿270°顺时针旋转`);
+    return camera.ImageRotation.ROTATION_270;
   }
 
   // [End get_photo_rotation]
@@ -965,12 +991,16 @@ export class PhotoManager implements OutputManager {
       const photoWidth = imageInfo.size.width;
       const photoHeight = imageInfo.size.height;
       const pixelRatio = displayInfo.densityPixels;
-
-      const WATERMARK_WIDTH_RATIO = 0.5;
-      const WATERMARK_HEIGHT_RATIO = 0.4;
       
-      const watermarkWidth = Math.round(photoWidth * WATERMARK_WIDTH_RATIO / pixelRatio);
-      const watermarkHeight = Math.round(photoHeight * WATERMARK_HEIGHT_RATIO / pixelRatio);
+      // 调试信息：原始照片尺寸和设备像素比
+      Logger.debug(TAG_LOG, `原始照片尺寸: ${photoWidth}×${photoHeight}, 设备像素比: ${pixelRatio}`);
+      
+      const watermarkWidth = Math.round(photoWidth * this.WATERMARK_WIDTH_RATIO / pixelRatio);
+      const watermarkHeight = Math.round(photoHeight * this.WATERMARK_HEIGHT_RATIO / pixelRatio);
+
+      // 调试信息：计算后的水印尺寸和比例参数
+      Logger.debug(TAG_LOG, `水印尺寸计算: 宽度=${watermarkWidth} (${photoWidth} × ${this.WATERMARK_WIDTH_RATIO} / ${pixelRatio})`);
+      Logger.debug(TAG_LOG, `水印尺寸计算: 高度=${watermarkHeight} (${photoHeight} × ${this.WATERMARK_HEIGHT_RATIO} / ${pixelRatio})`);
 
       const offscreenCanvas = new OffscreenCanvas(watermarkWidth, watermarkHeight);
       const context2d = offscreenCanvas.getContext('2d');
@@ -995,148 +1025,257 @@ export class PhotoManager implements OutputManager {
                                        watermarkInfo: WatermarkInfo, 
                                        canvasWidth: number , 
                                        canvasHeight: number ): Promise<void> {
-    context2d.clearRect(0, 0, canvasWidth, canvasHeight);
-    context2d.imageSmoothingEnabled = true;
-    context2d.imageSmoothingQuality = 'high';
-    context2d.textAlign = 'left';
-    context2d.textBaseline = 'top';
-    context2d.save();
+    // 调试信息：计划绘制的尺寸
+    Logger.debug(TAG_LOG, `计划绘制画布尺寸: ${canvasWidth}×${canvasHeight}`);
+    
+    // 布局常量
+    const MARGIN = 4; 
+    const DOUBLE_MARGIN = MARGIN * 2; 
+    const radius = 8; 
+    
+    // 顶部区域布局（不直接绘制，由底图构建方法负责）
+    const topRegionHeight = Math.round(canvasHeight * 0.3);
+    const topRectX = MARGIN; // 左边距
+    const topRectY = MARGIN; // 上边距
+    const topRectWidth = canvasWidth - DOUBLE_MARGIN; // 宽度减去左右边距
+    const topRectHeight = topRegionHeight - MARGIN; // 高度减去上边距
+    
+    // 在顶部矩形和底部矩形之间的区域：信息项布局
+    const infoItems = this.getWatermarkInfoItems(watermarkInfo);
+    const bottomRegionHeight = Math.round(canvasHeight * 0.1); // 底部区域高度
+    const infoRegionTop = topRectY + topRectHeight + MARGIN; // 顶部矩形底部加上间距
+    const infoRegionBottom = canvasHeight - bottomRegionHeight - MARGIN; // 底部矩形顶部减去间距
+    const infoRegionHeight = infoRegionBottom - infoRegionTop;
+    const itemCount = infoItems.length;
 
-    Logger.info(TAG_LOG, `水印绘制尺寸: ${canvasWidth}×${canvasHeight}`);
-
-    // 先尝试复用静态底图缓存（背景、徽标、标题栏）
+    // 1) 绘制/复用静态底图（背景、顶部/底部矩形、Logo与标题、信息项label与冒号、底部“制作单位：”label）
+    const orgForKey = watermarkInfo.organization || '应急管理部门';
+    const baseKey = this.getWatermarkBaseKey(canvasWidth, canvasHeight, orgForKey);
     this.purgeExpiredWatermarkBaseCache();
-    const baseKey = this.getWatermarkBaseKey(canvasWidth, canvasHeight);
-    const baseEntry = this.watermarkBaseCache.get(baseKey);
-
-    const MARGIN = 4;
-    const DOUBLE_MARGIN = MARGIN * 2;
-    const radius = 8;
-    const orgWidth = canvasWidth * 0.1;
-    const titleBarWidth = canvasWidth * 0.3;
-    const titleBarX = canvasWidth - titleBarWidth - MARGIN;
-    const orgX = MARGIN;
-    const orgHeight = canvasHeight - DOUBLE_MARGIN;
-    const titleBarHeight = canvasHeight - DOUBLE_MARGIN;
-    const orgY = MARGIN;
-    const titleBarY = MARGIN;
-
-    if (baseEntry) {
-      // 直接绘制缓存的底图
-      Logger.info(TAG_LOG, `底图缓存命中: key=${baseKey}`);
-      context2d.drawImage(baseEntry.pixelMap, 0, 0, canvasWidth, canvasHeight);
+    let baseEntry = this.watermarkBaseCache.get(baseKey);
+    if (!baseEntry) {
+      const layout: WatermarkBaseLayout = {
+        MARGIN: MARGIN,
+        DOUBLE_MARGIN: DOUBLE_MARGIN,
+        radius: radius,
+        topRectX: topRectX,
+        topRectY: topRectY,
+        topRectWidth: topRectWidth,
+        topRectHeight: topRectHeight,
+        bottomRegionHeight: bottomRegionHeight,
+        infoRegionTop: infoRegionTop,
+        infoRegionHeight: infoRegionHeight,
+        itemCount: itemCount,
+        infoItems: infoItems
+      };
+      baseEntry = await this.buildWatermarkBasePixelMap(watermarkInfo, canvasWidth, canvasHeight, layout);
+      this.watermarkBaseCache.set(baseKey, baseEntry);
+      Logger.debug(TAG_LOG, `底图缓存构建完成: key=${baseKey}, 尺寸=${canvasWidth}×${canvasHeight}`);
     } else {
-      // 绘制底图（不包含动态信息项）
-      Logger.info(TAG_LOG, `底图缓存未命中，重绘底图: key=${baseKey}`);
-      context2d.translate(0, 0);
-      context2d.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      this.drawRoundedRect(context2d, 0, 0, canvasWidth, canvasHeight, radius);
-      context2d.fill();
+      const nowTs = Date.now();
+      const ttlMs = baseEntry.expiresAt - nowTs;
+      Logger.debug(TAG_LOG, `底图缓存命中: key=${baseKey}, 剩余TTL=${ttlMs}ms`);
+    }
 
-      context2d.fillStyle = 'rgba(0, 87, 217, 0.5)';
-      this.drawRoundedRect(context2d, orgX, orgY, orgWidth, orgHeight, 0);
-      context2d.fill();
+    // 清空并绘制底图快照
+    context2d.clearRect(0, 0, canvasWidth, canvasHeight);
+    context2d.drawImage(baseEntry.pixelMap as image.PixelMap, 0, 0, canvasWidth, canvasHeight);
+    
+    // 2) 动态渲染 value（使用底图缓存的公共度量）
+    if (infoRegionHeight > 0 && infoItems.length > 0) {
+      const metrics = baseEntry.metrics;
+      context2d.fillStyle = 'black';
+      context2d.textAlign = 'left';
+      context2d.textBaseline = 'middle';
+      context2d.font = `${metrics.valueFontSize}px sans-serif`;
 
-      context2d.fillStyle = 'rgba(0, 87, 217, 0.5)';
-      this.drawRoundedRect(context2d, titleBarX, titleBarY, titleBarWidth, titleBarHeight, 0);
-      context2d.fill();
+      let k = 0;
+      while (k < infoItems.length) {
+        const textY = metrics.infoItemsTextY[k];
+        const valueText = infoItems[k].value;
+        context2d.fillText(valueText, metrics.valueX, textY, metrics.valueMaxWidth);
+        k = k + 1;
+      }
 
+      Logger.debug(TAG_LOG, `值渲染完成: 行数=${metrics.infoItemsCount}, 行高=${metrics.itemHeight.toFixed(1)}px, 列宽=${metrics.maxLabelWidth.toFixed(1)}px`);
+    }
+    
+    // 3) 底部“制作单位”值已纳入静态底图缓存，无需动态绘制
+
+    // 顶部 Logo 与标题文本已包含在静态底图中（缓存）
+  }
+
+  /**
+   * 构建静态水印底图（背景、顶部/底部矩形、Logo与标题、信息项label与冒号、底部“制作单位：”label），并缓存
+   */
+  private async buildWatermarkBasePixelMap(
+    watermarkInfo: WatermarkInfo,
+    canvasWidth: number,
+    canvasHeight: number,
+    layout: WatermarkBaseLayout
+  ): Promise<WatermarkBaseCacheEntry> {
+    const MARGIN = layout.MARGIN;
+    const DOUBLE_MARGIN = layout.DOUBLE_MARGIN;
+    const radius = layout.radius;
+    const topRectX = layout.topRectX;
+    const topRectY = layout.topRectY;
+    const topRectWidth = layout.topRectWidth;
+    const topRectHeight = layout.topRectHeight;
+    const bottomRegionHeight = layout.bottomRegionHeight;
+    const infoRegionTop = layout.infoRegionTop;
+    const infoRegionHeight = layout.infoRegionHeight;
+    const itemCount = layout.itemCount;
+    const infoItems = layout.infoItems;
+
+    const baseCanvas = new OffscreenCanvas(canvasWidth, canvasHeight);
+    const ctx = baseCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
+
+    // 背景：白色圆角矩形
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.drawRoundedRect(ctx, 0, 0, canvasWidth, canvasHeight, radius);
+    ctx.fill();
+
+    // 顶部矩形
+    ctx.fillStyle = 'rgba(0, 87, 217, 0.5)';
+    ctx.fillRect(topRectX, topRectY, topRectWidth, topRectHeight);
+
+    // 底部矩形
+    const bottomRectX = MARGIN;
+    const bottomRectY = canvasHeight - bottomRegionHeight;
+    const bottomRectWidth = canvasWidth - DOUBLE_MARGIN;
+    const bottomRectHeight = bottomRegionHeight - MARGIN;
+    ctx.fillRect(bottomRectX, bottomRectY, bottomRectWidth, bottomRectHeight);
+
+    // 顶部 Logo 与标题文本
+    try {
       const watermarkLogo = await this.loadWatermarkLogo();
       if (watermarkLogo) {
         const logoInfo = await watermarkLogo.getImageInfo();
-        const maxLogoWidth = titleBarHeight - DOUBLE_MARGIN;
-        const maxLogoHeight = titleBarWidth - DOUBLE_MARGIN;
+        const maxLogoWidth = topRectWidth - DOUBLE_MARGIN;
+        const maxLogoHeight = topRectHeight - DOUBLE_MARGIN;
         const widthRatio = maxLogoWidth / logoInfo.size.width;
         const heightRatio = maxLogoHeight / logoInfo.size.height;
         const scaleRatio = Math.min(widthRatio, heightRatio);
         const logoWidth = logoInfo.size.width * scaleRatio;
         const logoHeight = logoInfo.size.height * scaleRatio;
-        const logoX = titleBarX + (titleBarWidth - logoHeight) / 2;
-        const logoY = titleBarY + MARGIN;
-        context2d.save();
-        context2d.translate(logoX + logoHeight / 2, logoY + logoWidth / 2);
-        context2d.rotate(90 * Math.PI / 180);
-        context2d.drawImage(watermarkLogo, -logoWidth / 2, -logoHeight / 2, logoWidth, logoHeight);
-        context2d.restore();
-
-        // 静态标题文本
-        context2d.fillStyle = 'white';
-        context2d.font = '80px sans-serif';
-        context2d.textAlign = 'center';
-        context2d.textBaseline = 'middle';
-        const remainingHeight = titleBarHeight - (logoY + logoWidth);
-        const titleTextX = titleBarX + titleBarWidth / 2;
-        const titleTextY = logoY + logoWidth + remainingHeight / 2;
-        context2d.save();
-        context2d.translate(titleTextX, titleTextY);
-        context2d.rotate(90 * Math.PI / 180);
-        context2d.fillText('灭火救援灾害现场', 0, 0);
-        context2d.restore();
-
-        // 释放徽标像素图资源，避免内存泄漏
+        const logoX = topRectX + MARGIN;
+        const logoY = topRectY + (topRectHeight - logoHeight) / 2;
+        ctx.drawImage(watermarkLogo as image.PixelMap, logoX, logoY, logoWidth, logoHeight);
         watermarkLogo.release();
-      }
 
-      // 将底图快照缓存（TTL）
-      const baseSnapshot: image.PixelMap = await (context2d as OffscreenCanvasRenderingContext2D)
-        .getPixelMap(0, 0, canvasWidth, canvasHeight);
-      this.watermarkBaseCache.set(baseKey, { pixelMap: baseSnapshot, expiresAt: Date.now() + this.watermarkBaseCacheTTL });
-      Logger.info(TAG_LOG, `底图缓存构建完成: key=${baseKey}, ttlMs=${this.watermarkBaseCacheTTL}`);
+        const titleText = '灭火救援灾害现场';
+        const titleAreaX = logoX + logoWidth + MARGIN;
+        const titleAreaWidth = topRectWidth - (logoX + logoWidth + DOUBLE_MARGIN);
+        const titleAreaHeight = topRectHeight;
+        const titleFontSize = titleAreaHeight * 0.8;
+        ctx.fillStyle = 'white';
+        ctx.font = `${titleFontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const titleTextX = titleAreaX + titleAreaWidth / 2;
+        const titleTextY = topRectY + topRectHeight / 2;
+        ctx.fillText(titleText, titleTextX, titleTextY);
+      }
+    } catch (error) {
+      Logger.warn(TAG_LOG, `静态底图Logo绘制失败: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    // 叠加动态信息项文本
-    const infoItems = this.getWatermarkInfoItems(watermarkInfo);
-    const infoAreaWidth = titleBarX - MARGIN;
-    const itemCount = infoItems.length;
-    const availableHeight = infoAreaWidth;
-    const adjustedLineHeight = availableHeight / itemCount;
-    const infoCenterX = MARGIN + infoAreaWidth / 2;
-    const infoCenterY = DOUBLE_MARGIN;
-    const totalAdjustedHeight = (itemCount - 1) * adjustedLineHeight;
-    const startY = -totalAdjustedHeight / 2;
+    // 信息项 label 与冒号（中部区域）并计算公共度量
+    let metrics: WatermarkBaseMetrics = {
+      itemHeight: 0,
+      valueFontSize: 0,
+      maxLabelWidth: 0,
+      valueX: 0,
+      valueMaxWidth: 0,
+      infoItemsCount: itemCount,
+      infoItemsTextY: []
+    };
+    if (infoRegionHeight > 0 && itemCount > 0) {
+      metrics.itemHeight = infoRegionHeight / itemCount;
+      const labelFontSize = metrics.itemHeight * 2; // 与现有样式保持一致
+      metrics.valueFontSize = labelFontSize;
 
-    context2d.save();
-    context2d.translate(infoCenterX, infoCenterY);
-    context2d.rotate(90 * Math.PI / 180);
-    context2d.textAlign = 'left';
-    context2d.textBaseline = 'middle';
+      ctx.fillStyle = 'black';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${labelFontSize}px sans-serif`;
 
-    infoItems.forEach((item, index) => {
-      const text = `${item.label}：${item.value}`;
-      const y = startY + index * adjustedLineHeight;
-      if (item.label === '制作单位') {
-        context2d.fillStyle = 'white';
-        context2d.font = '500 50px sans-serif';
-      } else {
-        context2d.fillStyle = 'black';
-        context2d.font = '50px sans-serif';
+      // 计算每个label的宽度，取最大值
+      let i = 0;
+      while (i < infoItems.length) {
+        const labelText = `${infoItems[i].label}：`;
+        const width = ctx.measureText(labelText).width;
+        if (width > metrics.maxLabelWidth) {
+          metrics.maxLabelWidth = width;
+        }
+        i = i + 1;
       }
-      context2d.fillText(text, 0, y);
-    });
-    context2d.restore();
+      const labelX = MARGIN;
+      metrics.valueX = labelX + metrics.maxLabelWidth + MARGIN;
+      metrics.valueMaxWidth = canvasWidth - metrics.valueX - MARGIN;
 
-    context2d.restore();
-    Logger.info(TAG_LOG, `水印绘制完成: ${canvasWidth}×${canvasHeight}`);
+      // 实际绘制静态label
+      let j = 0;
+      while (j < infoItems.length) {
+        const textY = infoRegionTop + (j + 0.5) * metrics.itemHeight;
+        metrics.infoItemsTextY[j] = textY;
+        const labelText = `${infoItems[j].label}：`;
+        ctx.fillText(labelText, labelX, textY);
+        j = j + 1;
+      }
+    }
+
+    // 底部“制作单位：”label 与 value 静态绘制，并计算公共度量
+    {
+      const orgFontSize = bottomRectHeight * 2; // 与现有样式一致
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = `bold ${orgFontSize}px sans-serif`;
+      const orgLabel = '制作单位：';
+      const orgLabelX = bottomRectX + MARGIN;
+      const orgLabelY = bottomRectY + bottomRectHeight / 2;
+      ctx.fillText(orgLabel, orgLabelX, orgLabelY);
+      const orgLabelWidth = ctx.measureText(orgLabel).width;
+      const orgValueX = orgLabelX + orgLabelWidth + MARGIN;
+      const orgValueY = orgLabelY;
+      const orgValueMaxWidth = bottomRectWidth - (orgValueX - bottomRectX) - MARGIN;
+      const orgValue = watermarkInfo.organization || '应急管理部门';
+      ctx.fillText(orgValue, orgValueX, orgValueY, orgValueMaxWidth);
+    }
+
+    const pixelMap: image.PixelMap = await ctx.getPixelMap(0, 0, canvasWidth, canvasHeight);
+    const entry: WatermarkBaseCacheEntry = { pixelMap: pixelMap, expiresAt: Date.now() + this.watermarkBaseCacheTTL, metrics: metrics };
+    Logger.debug(TAG_LOG, `静态底图构建完成并缓存: ${canvasWidth}×${canvasHeight}`);
+    return entry;
   }
 
   private getWatermarkInfoItems(watermarkInfo: WatermarkInfo): Array<WatermarkInfoItem> {
     return [
       { label: '拍摄时间', value: watermarkInfo.timestamp },
       { label: '天气信息', value: watermarkInfo.weather || '获取中...' },
-      { label: '地点信息', value: watermarkInfo.location || '定位中...' },
-      { label: '海拔信息', value: watermarkInfo.altitude || '计算中...' },
+      { label: '地        点', value: watermarkInfo.location || '定位中...' },
+      { label: '海        拔', value: watermarkInfo.altitude || '计算中...' },
       { label: '方  位  角', value: watermarkInfo.direction || '计算中...' },
       { label: '经        度', value: watermarkInfo.longitude || '计算中...' },
-      { label: '纬        度', value: watermarkInfo.latitude || '获取中...' },
-      { label: '制作单位', value: watermarkInfo.organization || '应急管理部门' }
+      { label: '纬        度', value: watermarkInfo.latitude || '获取中...' }
     ];
   }
 
   private async compositeImages(originalPixelMap: image.PixelMap, watermarkPixelMap: image.PixelMap, originalInfo: image.ImageInfo): Promise<image.PixelMap> {
     try {
-      // 直接在原图上就地混合水印，避免额外拷贝
+      // 计算水印在原图中的位置：左下角并与边缘对齐
+      const targetWidth = originalInfo.size.width;
+      const targetHeight = originalInfo.size.height;
+      const wmInfo = await watermarkPixelMap.getImageInfo();
+      const watermarkWidth = wmInfo.size.width;
+      const watermarkHeight = wmInfo.size.height;
+
+      // 左下角坐标（X贴左边缘，Y贴底部边缘）
       const watermarkX = 0;
-      const watermarkY = 0;
+      const watermarkY = Math.max(targetHeight - watermarkHeight, 0);
+
       await this.blendWatermark(originalPixelMap, watermarkPixelMap, watermarkX, watermarkY);
       return originalPixelMap;
     } catch (error) {
@@ -1145,6 +1284,7 @@ export class PhotoManager implements OutputManager {
     }
   }
 
+  // 直接在原图上就地混合水印，避免额外拷贝
   private async blendWatermark(targetPixelMap: image.PixelMap, watermarkPixelMap: image.PixelMap, x: number, y: number): Promise<void> {
     try {
       const imageInfos = await Promise.all([
