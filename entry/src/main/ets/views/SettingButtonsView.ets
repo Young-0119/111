@@ -25,6 +25,11 @@ interface FlashItem {
   toast: ResourceStr;
 }
 
+interface SaveModeOption {
+  key: 'WM_ONLY' | 'KEEP_BOTH';
+  label: ResourceStr;
+}
+
 @Component
 struct SettingButtonsView {
   private flashItems: FlashItem[] = [
@@ -163,6 +168,32 @@ struct SettingButtonsView {
     }
   }
 
+  getSaveModeMenuElements(): MenuElement[] {
+    const opts: SaveModeOption[] = [
+      { key: 'WM_ONLY', label: $r('app.string.save_mode_watermark_only') },
+      { key: 'KEEP_BOTH', label: $r('app.string.save_mode_keep_both') }
+    ];
+    return opts.map(opt => {
+      const menuElement: MenuElement = {
+        value: opt.label,
+        action: () => {
+          this.photoManager.setSaveMode(opt.key);
+          const toastMsg = opt.key === 'WM_ONLY' ? $r('app.string.save_mode_watermark_only') : $r('app.string.save_mode_keep_both');
+          showToast(this.getUIContext(), toastMsg);
+        }
+      };
+      return menuElement;
+    });
+  }
+
+  @Builder
+  saveModeButton(saveModeElements: MenuElement[]) {
+    Text('印')
+      .fontColor(this.photoManager.getSaveMode() === 'WM_ONLY' ? Color.White : Color.Gray)
+      .fontSize(18)
+      .bindMenu(saveModeElements)
+  }
+
   getPhotoDelayTimeElements(): MenuElement[] {
     const menuTextMap: Map<string, number> = new Map([
       ['off', 0],
@@ -205,6 +236,7 @@ struct SettingButtonsView {
         this.rateButton()
         this.flashButton(this.photoFlashModes)
         this.delayPhotoButton(this.getPhotoDelayTimeElements())
+        this.saveModeButton(this.getSaveModeMenuElements())
         // Removed dual-stage photo toggle button - only single-stage photo mode supported
       } else {
         if (this.videoManager.isRecording()) {

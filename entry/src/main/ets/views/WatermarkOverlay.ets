@@ -103,10 +103,13 @@ export struct WatermarkOverlay {
 
         TextInput({ placeholder: '请输入', text: this.editingOrganization })
           .width('100%')
-          .height(36)
-          .fontSize(14)
-          .backgroundColor('#00000044')
-          .borderRadius(4)
+          .height(40)
+          .fontSize(16)
+          .fontColor('#222222')
+          .placeholderColor('#888888')
+          .backgroundColor('#FFFFFF')
+          .border({ width: 1, color: '#DCDCDC' })
+          .borderRadius(6)
           .padding({ left: 12, right: 12 })
           .margin({ bottom: 16 })
           .onChange((value: string) => {

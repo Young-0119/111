@@ -48,8 +48,7 @@ export class OrganizationService {
       }
     }
     try {
-      const org = await this.getOrganizationFromPrefs(this.appContext);
-      this.currentOrganization = org;
+      const org = await this.getEffectiveOrganization(this.resolveContext(this.appContext));
       if (org && org.length > 0) {
         this.notify(org);
       }
@@ -62,14 +61,18 @@ export class OrganizationService {
     return this.currentOrganization;
   }
 
-  async getOrganizationFromPrefs(ctx?: Context): Promise<string> {
+  private async getOrganizationFromPrefs(ctx?: Context): Promise<string> {
     try {
-      const contextToUse: Context | undefined = ctx ?? this.appContext;
+      const contextToUse: Context | undefined = this.resolveContext(ctx ?? this.appContext);
       if (!contextToUse) {
         return '';
       }
       const prefs: preferences.Preferences = await preferences.getPreferences(contextToUse, this.PREF_NAME);
-      const val = await prefs.get(this.PREF_KEY_ORGANIZATION, '') as string;
+      let val = await prefs.get(this.PREF_KEY_ORGANIZATION, '') as string;
+      if (!val || val.length === 0) {
+        const legacy = await prefs.get('organization', '') as string;
+        val = typeof legacy === 'string' ? legacy : '';
+      }
       return typeof val === 'string' ? val : '';
     } catch (err) {
       Logger.warn(TAG, `读取组织失败: ${String(err)}`);
@@ -79,10 +82,13 @@ export class OrganizationService {
 
   async setOrganization(newOrg: string, ctx?: Context): Promise<void> {
     const normalized = (newOrg || '').trim();
+    if (normalized === this.currentOrganization) {
+      return;
+    }
     this.currentOrganization = normalized;
     this.notify(normalized);
     try {
-      const contextToUse: Context | undefined = ctx ?? this.appContext;
+      const contextToUse: Context | undefined = this.resolveContext(ctx ?? this.appContext);
       if (contextToUse) {
         const prefs: preferences.Preferences = await preferences.getPreferences(contextToUse, this.PREF_NAME);
         await prefs.put(this.PREF_KEY_ORGANIZATION, normalized);
@@ -91,6 +97,15 @@ export class OrganizationService {
     } catch (err) {
       Logger.warn(TAG, `持久化组织失败: ${String(err)}`);
     }
+  }
+
+  async getEffectiveOrganization(ctx?: Context): Promise<string> {
+    if (this.currentOrganization && this.currentOrganization.length > 0) {
+      return this.currentOrganization;
+    }
+    const org = await this.getOrganizationFromPrefs(this.resolveContext(ctx ?? this.appContext));
+    this.currentOrganization = org;
+    return org;
   }
 
   addListener(listener: (org: string) => void): void {
@@ -107,6 +122,19 @@ export class OrganizationService {
         try { fn(org); } catch (_) {}
       });
     } catch (_) {}
+  }
+
+  private resolveContext(ctx?: common.UIAbilityContext | Context): Context | undefined {
+    const candidate: common.UIAbilityContext | Context | undefined = ctx ?? this.appContext;
+    if (!candidate) {
+      return undefined;
+    }
+    try {
+      if (typeof (candidate as common.UIAbilityContext).getApplicationContext === 'function') {
+        return (candidate as common.UIAbilityContext).getApplicationContext();
+      }
+    } catch (_) {}
+    return candidate as Context;
   }
 }
 

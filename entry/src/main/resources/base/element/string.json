@@ -120,5 +120,22 @@
       "name": "permission_LOCATION",
       "value": "For location"
     }
+    ,
+    {
+      "name": "save_mode_watermark_only",
+      "value": "Watermark only"
+    },
+    {
+      "name": "save_mode_keep_both",
+      "value": "Save both original and watermark"
+    },
+    {
+      "name": "save_mode_current_watermark_only",
+      "value": "Save: WM"
+    },
+    {
+      "name": "save_mode_current_keep_both",
+      "value": "Save: Both"
+    }
   ]
 }

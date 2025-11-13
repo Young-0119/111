@@ -24,6 +24,7 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { display } from '@kit.ArkUI';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { Logger } from 'commons';
 import { OrganizationService } from '../dataservices/OrganizationService';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
@@ -79,6 +80,9 @@ interface Size2D {
   width: number;
   height: number;
 }
+interface PhotoAssetEvent {
+  uri: string;
+}
 
 // ArkTS: 为静态底图布局参数定义显式接口，避免内联对象类型
 interface WatermarkBaseLayout {
@@ -132,6 +136,8 @@ export class PhotoManager implements OutputManager {
   
   // 水印处理相关属性
   private enableWatermark: boolean = true;
+  private saveMode: 'WM_ONLY' | 'KEEP_BOTH' = 'WM_ONLY';
+  private readonly PREF_KEY_SAVE_MODE: string = 'save_mode';
   
   // 并发保护：避免同时处理多张照片
   private isProcessingPhoto: boolean = false;
@@ -162,6 +168,7 @@ export class PhotoManager implements OutputManager {
   private watermarkInfoCacheTTL: number = 30000; // 30秒TTL
   private cachedInfoExpiresAt: number = 0;
   private cachedInfoValues: WatermarkDynamicInfo | null = null; // weather/location/altitude/direction/longitude/latitude/organization
+  private orgListener?: (org: string) => void;
 
   /**
    * 计算水印绘制尺寸（考虑设备像素比）
@@ -181,7 +188,7 @@ export class PhotoManager implements OutputManager {
     const orgValue = typeof orgOverride === 'string'
       ? orgOverride
       : (OrganizationService.getInstance().getOrganization() ||
-        await OrganizationService.getInstance().getOrganizationFromPrefs(this.appContext));
+        await OrganizationService.getInstance().getEffectiveOrganization(this.appContext));
     const values: WatermarkDynamicInfo = {
       weather: await this.getWeatherInfo(),
       location: await this.getLocationInfo(),
@@ -209,7 +216,7 @@ export class PhotoManager implements OutputManager {
       const orgForKey = (this.cachedInfoValues?.organization && this.cachedInfoValues.organization.length > 0)
         ? this.cachedInfoValues.organization
         : (OrganizationService.getInstance().getOrganization() ||
-          await OrganizationService.getInstance().getOrganizationFromPrefs(this.appContext));
+          await OrganizationService.getInstance().getEffectiveOrganization(this.appContext));
       const key = this.getWatermarkBaseKey(watermarkWidth, watermarkHeight, orgForKey);
       if (this.watermarkBaseCache.has(key)) return;
 
@@ -248,8 +255,13 @@ export class PhotoManager implements OutputManager {
     
     // 初始化位置信息
     this.initializeLocation();
+    this.orgListener = (org: string) => {
+      this.refreshWatermarkCachesImmediately(org).catch(() => {});
+    };
+    this.addOrganizationListener(this.orgListener);
     // 顺序初始化与预热：确保组织值到位后再构建底图，避免 key 的 org 为空
     this.initOrganizationFromPrefs()
+      .then(() => this.initSaveModeFromPrefs())
       .then(() => this.prewarmWatermarkInfo())
       .then(() => this.prewarmWatermarkBaseCacheForExpectedSize())
       .catch((err: Error | BusinessError) =>
@@ -355,6 +367,39 @@ export class PhotoManager implements OutputManager {
     this.enableWatermark = enabled;
   }
 
+  public getSaveMode(): 'WM_ONLY' | 'KEEP_BOTH' {
+    return this.saveMode;
+  }
+
+  private async initSaveModeFromPrefs(): Promise<void> {
+    try {
+      const prefs: preferences.Preferences = await preferences.getPreferences(this.appContext, 'watermark_prefs');
+      const mode = await prefs.get(this.PREF_KEY_SAVE_MODE, 'WM_ONLY') as string;
+      if (mode === 'KEEP_BOTH') {
+        this.saveMode = 'KEEP_BOTH';
+      } else {
+        this.saveMode = 'WM_ONLY';
+      }
+      Logger.info(TAG_LOG, `初始化保存模式：${this.saveMode}`);
+    } catch (err) {
+      Logger.warn(TAG_LOG, `初始化保存模式失败: ${String(err)}`);
+      this.saveMode = 'WM_ONLY';
+    }
+  }
+
+  public async setSaveMode(mode: 'WM_ONLY' | 'KEEP_BOTH', ctx?: Context): Promise<void> {
+    this.saveMode = mode;
+    try {
+      const contextToUse: Context = (ctx ?? this.appContext);
+      const prefs: preferences.Preferences = await preferences.getPreferences(contextToUse, 'watermark_prefs');
+      await prefs.put(this.PREF_KEY_SAVE_MODE, mode);
+      await prefs.flush();
+      Logger.info(TAG_LOG, `保存模式更新：${mode}`);
+    } catch (err) {
+      Logger.warn(TAG_LOG, `保存模式持久化失败: ${String(err)}`);
+    }
+  }
+
   /**
    * 设置制作单位（单一入口）：更新内存态、持久化、刷新缓存
    */
@@ -437,86 +482,39 @@ export class PhotoManager implements OutputManager {
 
   // [End create_photo_output]
 
-  // [Start set_photo_cb_single]
-  // Set photo callback single with watermark processing
-  /**
-   * 设置单阶段拍照回调，内含水印处理与并发保护
-   */
-  setPhotoOutputCbSingle(photoOutput: camera.PhotoOutput, context: Context) {
-    photoOutput.on('photoAvailable', async (errCode: BusinessError, photo: camera.Photo): Promise<void> => {
-      if (errCode || photo === undefined) {
-        Logger.error(TAG_LOG, 'getPhoto failed');
+  
+
+  // [Start set_photo_cb_asset]
+  // 以已保存资产为入口进行水印处理
+  setPhotoOutputCbAsset(photoOutput: camera.PhotoOutput, context: Context) {
+    photoOutput.on('photoAssetAvailable', async (errCode: BusinessError, asset: PhotoAssetEvent): Promise<void> => {
+      if (errCode || !asset || !asset.uri) {
+        Logger.error(TAG_LOG, 'photoAssetAvailable: invalid asset');
         return;
       }
-      
-      // 并发保护：若已有照片在处理，忽略本次回调
+      Logger.info(TAG_LOG, `photoAssetAvailable: uri=${asset.uri}`);
       if (this.isProcessingPhoto) {
-        Logger.warn(TAG_LOG, '已有照片正在处理，忽略本次回调');
+        Logger.warn(TAG_LOG, '已有照片正在处理，忽略资产回调');
         return;
       }
       this.isProcessingPhoto = true;
       try {
-        // 检查是否启用水印
         if (this.enableWatermark) {
-          await this.processPhotoWithWatermark(context, photo);
+          await this.processSavedAssetWithWatermark(context, asset.uri);
         } else {
-          // 不使用水印，直接保存
-          this.mediaLibSavePhotoSingle(context, photo.main);
+          Logger.info(TAG_LOG, '水印关闭：保留系统已保存的原片');
         }
+      } catch (e) {
+        Logger.error(TAG_LOG, `photoAssetAvailable 处理失败: ${String(e)}`);
       } finally {
         this.isProcessingPhoto = false;
       }
     });
   }
 
-  // [End set_photo_cb_single]
+  // [End set_photo_cb_asset]
 
-  /**
-   * 处理带水印的照片
-   */
-  /**
-   * 完整的带水印处理流程：获取信息 → 绘制 → 保存 → 回调
-   */
-  private async processPhotoWithWatermark(context: Context, photo: camera.Photo): Promise<void> {
-    let chainStage: string = 'begin';
-    try {
-      Logger.info(TAG_LOG, `水印处理链阶段: ${chainStage}`);
-      Logger.info(TAG_LOG, '开始水印处理流程');
-      
-      // 获取水印信息
-      const watermarkInfo: WatermarkInfo = await this.getWatermarkInfo();
-      
-      let savedUri: string;
-      let processedPixelMap: image.PixelMap;
-      
-      chainStage = 'compose';
-      Logger.info(TAG_LOG, `水印处理链阶段: ${chainStage}`);
-      Logger.info(TAG_LOG, '使用内置水印处理方法');
-      processedPixelMap = await this.processWatermark(photo, watermarkInfo);
-      
-      // 保存处理后的图像
-      savedUri = await this.savePixelMapToGallery(processedPixelMap, context);
-      
-      // 调用回调函数
-      this.callback(processedPixelMap, savedUri);
-      
-      chainStage = 'done';
-      Logger.info(TAG_LOG, `水印处理完成，保存路径: ${savedUri}`);
-      Logger.info(TAG_LOG, `水印处理链阶段: ${chainStage}`);
-      
-    } catch (error) {
-      // 改进错误日志记录，提供更详细的错误信息
-      Logger.error(TAG_LOG, `水印处理失败: ${String(error)}`);
-      
-      // 降级处理：直接保存原图
-      chainStage = 'degraded';
-      Logger.info(TAG_LOG, `水印处理链阶段: ${chainStage}`);
-      this.mediaLibSavePhotoSingle(context, photo.main);
-      Logger.info(TAG_LOG, '降级流程：已保存原图');
-      chainStage = 'done';
-      Logger.info(TAG_LOG, `水印处理链阶段: ${chainStage}`);
-    }
-  }
+  
 
   /**
    * 获取水印信息
@@ -535,12 +533,9 @@ export class PhotoManager implements OutputManager {
     let org = OrganizationService.getInstance().getOrganization() ||
       (infoValues.organization && infoValues.organization.length > 0
         ? infoValues.organization
-        : await OrganizationService.getInstance().getOrganizationFromPrefs(this.appContext));
+        : await OrganizationService.getInstance().getEffectiveOrganization(this.appContext));
     // 空值统一替换为默认占位文案，避免空值导致的时序问题与显示缺失
-    if (!org || org.trim().length === 0) {
-      org = '（双击修改）';
-    }
-    this.debugLog(`水印组织值决定: '${org}' (服务/缓存/偏好回退)`);
+    this.debugLog(`水印组织值: '${org}'`);
     // 如与缓存不一致，保持缓存与返回值一致，避免后续使用旧组织
     if (infoValues.organization !== org) {
       this.cachedInfoValues = {
@@ -565,7 +560,6 @@ export class PhotoManager implements OutputManager {
     };
   }
 
-  // 已移除：createPixelMapFromPhoto（使用 getPhotoPixelMap 统一实现）
 
   /**
    * 获取天气信息
@@ -603,128 +597,110 @@ export class PhotoManager implements OutputManager {
     return '北偏东30°';
   }
 
-  // [Start save_photo_single]
-  // Save photo single
-  mediaLibSavePhotoSingle(context: Context, imageObj: image.Image) {
-    Logger.info(TAG_LOG, '降级保存: begin');
-    const onGetComponent = async (errCode: BusinessError, component: image.Component) => {
-      if (errCode || component === undefined) {
-        Logger.error(TAG_LOG, '降级保存: getComponent(JPEG)失败');
-        return;
-      }
-      const buffer: ArrayBuffer = component.byteBuffer;
-      if (!buffer) {
-        Logger.error(TAG_LOG, '降级保存: byteBuffer为空');
-        return;
-      }
-      let photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
-      let extension: string = 'jpg';
-      let options: photoAccessHelper.CreateOptions = {
-        title: 'testPhoto'
-      }
-      try {
-        let assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
-          photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
-        assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer)
-        assetChangeRequest.saveCameraPhoto();
-        let accessHelper: photoAccessHelper.PhotoAccessHelper =
-          photoAccessHelper.getPhotoAccessHelper(context);
-        await accessHelper.applyChanges(assetChangeRequest);
-        let imageSource = image.createImageSource(buffer);
-        let pixelmap = imageSource.createPixelMapSync();
-        this.callback(pixelmap, assetChangeRequest.getAsset().uri);
-        accessHelper.release();
-        imageObj.release();
-        Logger.info(TAG_LOG, '降级保存: done');
-      } catch (exception) {
-        Logger.error(TAG_LOG,
-          `降级保存: 失败, code=${exception.code}, message=${exception.message}`);
-      }
-    };
-    const attemptGetComponent = () => {
-      imageObj.getComponent(image.ComponentType.JPEG, onGetComponent);
-    };
-    try {
-      attemptGetComponent();
-    } catch (syncThrow) {
-      Logger.error(TAG_LOG, '降级保存: getComponentSyncThrow');
-      // 微延时重试一次
-      setTimeout(() => {
-        try {
-          Logger.info(TAG_LOG, '降级保存: getComponentRetry-begin');
-          attemptGetComponent();
-        } catch (syncThrow2) {
-          Logger.error(TAG_LOG, '降级保存: getComponentRetry-fail');
-        }
-      }, 20);
-    }
-  }
-
   /**
    * 保存 PixelMap 到相册
-   *
-   * 步骤：
-   * 1) 使用复用的 ImagePacker 将 PixelMap 编码为 JPEG buffer；
-   * 2) 通过 MediaAssetChangeRequest 写入相册，并返回保存的 URI；
-   * 3) 记录阶段日志便于性能追踪。
    */
+  private async encodePixelMapToJpeg(pixelMap: image.PixelMap): Promise<ArrayBuffer> {
+    const imagePackerApi = this.getOrCreateImagePacker();
+    const packOpts: image.PackingOption = {
+      format: 'image/jpeg',
+      quality: this.DEFAULT_JPEG_QUALITY,
+      desiredDynamicRange: this.DEFAULT_DYNAMIC_RANGE
+    };
+    const buffer: ArrayBuffer = await imagePackerApi.packing(pixelMap, packOpts);
+    return buffer;
+  }
+
   async savePixelMapToGallery(pixelMap: image.PixelMap, context: Context): Promise<string> {
     try {
-      // 将PixelMap转换为JPEG格式的ArrayBuffer（复用 ImagePacker）
-      const imagePackerApi = this.getOrCreateImagePacker();
-      
-      // 编码参数：集中在类常量中管理，便于统一调整
-      const packOpts: image.PackingOption = {
-        format: 'image/jpeg',
-        quality: this.DEFAULT_JPEG_QUALITY, // 质量 90%，平衡体积与耗时
-        desiredDynamicRange: this.DEFAULT_DYNAMIC_RANGE // 自动动态范围处理
-      };
-      
-      const buffer: ArrayBuffer = await imagePackerApi.packing(pixelMap, packOpts);
-      Logger.info(TAG_LOG, 'ImagePacker 复用执行 packing 完成');
-      
-      if (!buffer) {
-        throw new Error('PixelMap转换为buffer失败');
-      }
-      
+      const buffer: ArrayBuffer = await this.encodePixelMapToJpeg(pixelMap);
       Logger.info(TAG_LOG, `图像编码完成，缓冲区大小: ${buffer.byteLength} bytes`);
-      
-      // 保存到相册
-      const photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
-      const extension: string = 'jpg';
-      const options: photoAccessHelper.CreateOptions = {
-        title: `watermark_photo_${Date.now()}`
-      };
-      
-      const assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
-        photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, options);
-      assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer);
-      assetChangeRequest.saveCameraPhoto();
-      
-      const accessHelper: photoAccessHelper.PhotoAccessHelper =
-        photoAccessHelper.getPhotoAccessHelper(context);
-      await accessHelper.applyChanges(assetChangeRequest);
-      
-      const savedUri = assetChangeRequest.getAsset().uri;
-      accessHelper.release();
+      const savedUri: string = await this.saveBufferToGallery(buffer, context, `watermark_photo_${Date.now()}`);
       return savedUri;
-      
     } catch (error) {
       Logger.error(TAG_LOG, `保存PixelMap失败: ${String(error)}`);
       throw new Error('保存处理后的图像失败');
     }
   }
-
+  
+  private async saveBufferToGallery(buffer: ArrayBuffer, context: Context, title: string): Promise<string> {
+    const photoType: photoAccessHelper.PhotoType = photoAccessHelper.PhotoType.IMAGE;
+    const extension: string = 'jpg';
+    const createOptions: photoAccessHelper.CreateOptions = { title };
+    const assetChangeRequest: photoAccessHelper.MediaAssetChangeRequest =
+      photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(context, photoType, extension, createOptions);
+    assetChangeRequest.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer);
+    assetChangeRequest.saveCameraPhoto();
+    const accessHelper: photoAccessHelper.PhotoAccessHelper = photoAccessHelper.getPhotoAccessHelper(context);
+    await accessHelper.applyChanges(assetChangeRequest);
+    const savedUri = assetChangeRequest.getAsset().uri;
+    accessHelper.release();
+    return savedUri;
+  }
+  
   // [End save_photo_single]
+
+  // 基于已保存的资产 URI 进行水印处理与保存
+  private async processSavedAssetWithWatermark(context: Context, assetUri: string): Promise<void> {
+    Logger.info(TAG_LOG, '水印处理链阶段: begin');
+    Logger.info(TAG_LOG, '开始水印处理流程');
+    const watermarkInfo: WatermarkInfo = await this.getWatermarkInfo();
+    const originalPixelMap: image.PixelMap = await this.decodePixelMapFromUri(assetUri);
+    const displayInfo = display.getDefaultDisplaySync();
+    if (this.saveMode === 'KEEP_BOTH') {
+      const origBuffer: ArrayBuffer = await this.encodePixelMapToJpeg(originalPixelMap);
+      await this.saveBufferToGallery(origBuffer, context, `original_photo_${Date.now()}`);
+    }
+    const watermarkPixelMap = await this.createWatermarkPixelMap(watermarkInfo, originalPixelMap, displayInfo);
+    const originalInfo = await originalPixelMap.getImageInfo();
+    const resultPixelMap = await this.compositeImages(originalPixelMap, watermarkPixelMap, originalInfo);
+    Logger.info(TAG_LOG, '水印处理链阶段: compose-done');
+    const savedUri = await this.savePixelMapToGallery(resultPixelMap, context);
+    this.callback(resultPixelMap, savedUri);
+    Logger.info(TAG_LOG, `水印处理完成，保存路径: ${savedUri}`);
+    Logger.info(TAG_LOG, '水印处理链阶段: done');
+    watermarkPixelMap.release();
+    if (this.saveMode === 'WM_ONLY') {
+      Logger.info(TAG_LOG, 'WM_ONLY: 当前保留系统原片（删除接口未使用）');
+    }
+  }
+
+  // 基于 URI 的文件解码生成 PixelMap
+  private async decodePixelMapFromUri(uri: string): Promise<image.PixelMap> {
+    let imageSource: image.ImageSource | null = null;
+    let fileHandle: fileIo.File | null = null;
+    try {
+      fileHandle = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      imageSource = image.createImageSource(fileHandle.fd);
+      if (!imageSource) {
+        throw new Error('ImageSource未创建');
+      }
+      const pixelMap = await imageSource.createPixelMap({
+        desiredSize: { width: 0, height: 0 },
+        desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
+        editable: true
+      });
+      return pixelMap;
+    } catch (e) {
+      Logger.error(TAG_LOG, `从URI解码失败: ${String(e)}`);
+      throw new Error('无法从URI解码图像');
+    } finally {
+      if (imageSource) {
+        try { imageSource.release(); } catch (_) {}
+      }
+      if (fileHandle) {
+        try { await fileIo.close(fileHandle.fd); } catch (_) {}
+      }
+    }
+  }
 
   setPhotoOutputCallback() {
     if (!this.output) {
       return;
     }
-    // Only support single-stage photo mode
+    // 改为以已保存资产为主的处理模式
     this.output?.off('photoAssetAvailable');
-    this.output?.off('photoAvailable');
-    this.setPhotoOutputCbSingle(this.output, this.context);
+    this.setPhotoOutputCbAsset(this.output, this.context);
   }
 
   preparePhoto(session: camera.Session, zoomRatio?: number, flashMode?: camera.FlashMode,
@@ -802,7 +778,6 @@ export class PhotoManager implements OutputManager {
     }
   }
 
-  // 已移除：setFocusPoint 方法由 CameraManager 统一对外暴露
 
   public setPhotoZoomRatio(photoSession: camera.PhotoSession, zoomRatio?: number) {
     let photoZoomRatio = 0;
@@ -823,7 +798,6 @@ export class PhotoManager implements OutputManager {
     }
   }
 
-  // 已移除：getSupportedColorSpaces 不再对外提供封装
 
   // [Start get_photo_rotation]
   // Get photo rotation - 修正逆时针旋转90°问题
@@ -948,8 +922,7 @@ export class PhotoManager implements OutputManager {
     // 清理水印处理相关资源（当前为内联方法，无需显式销毁）
     Logger.info(TAG_LOG, '水印处理资源已清理');
     
-    // 统一解绑所有可能事件，避免残留监听
-    this.output?.off('photoAvailable');
+    // 统一解绑事件，避免残留监听
     this.output?.off('photoAssetAvailable');
     
     // 清理水印底图缓存
@@ -969,6 +942,10 @@ export class PhotoManager implements OutputManager {
         Logger.error(TAG_LOG, `ImagePacker 释放失败: ${error?.code ?? ''} ${error?.message ?? ''}`);
       }
       this.imagePacker = undefined;
+    }
+    if (this.orgListener) {
+      this.removeOrganizationListener(this.orgListener);
+      this.orgListener = undefined;
     }
     this.output = undefined;
   }
@@ -1011,202 +988,7 @@ export class PhotoManager implements OutputManager {
    * ===== 内联水印处理方法（来自 RobustWatermarkProcessor） =====
    */
 
-  // 主要水印处理方法 - 使用原生API确保兼容性
-  private async processWatermark(photo: camera.Photo, watermarkInfo: WatermarkInfo): Promise<image.PixelMap> {
-    Logger.info(TAG_LOG, '开始稳定水印处理流程');
-    Logger.info(TAG_LOG, '水印处理链阶段: compose');
-    
-    let originalPixelMap: image.PixelMap | null = null;
-    let watermarkPixelMap: image.PixelMap | null = null;
-    
-    try {
-      // 针对“制作单位”为空的场景进行时序稳定化处理
-      const orgEmpty: boolean = !watermarkInfo.organization || watermarkInfo.organization.trim().length === 0;
-      if (orgEmpty) {
-        this.debugLog('compose-preDelay(emptyOrg) 120ms');
-      }
-      // 1. 并行获取原始图像和设备信息
-      const parallelResults1 = await Promise.all([
-        (async () => {
-          if (orgEmpty) {
-            await this.sleep(120);
-          }
-          return this.getPhotoPixelMap(photo);
-        })(),
-        Promise.resolve(display.getDefaultDisplaySync())
-      ]);
-      originalPixelMap = parallelResults1[0];
-      const displayInfo = parallelResults1[1];
-      
-      // 2. 并行创建水印图像和获取原图信息
-      const parallelResults2 = await Promise.all([
-        this.createWatermarkPixelMap(watermarkInfo, originalPixelMap, displayInfo),
-        originalPixelMap.getImageInfo()
-      ]);
-      watermarkPixelMap = parallelResults2[0];
-      const originalInfo = parallelResults2[1];
-
-      // 3. 合成图像
-      const resultPixelMap: image.PixelMap = await this.compositeImages(originalPixelMap, watermarkPixelMap, originalInfo);
-      Logger.info(TAG_LOG, '水印处理链阶段: compose-done');
-      
-      return resultPixelMap;
-    } catch (err) {
-      Logger.error(TAG_LOG, `水印处理失败: ${String(err)}`);
-      
-      // 降级处理：返回原图（使用已获取的原图或重新获取）
-      if (originalPixelMap) {
-        Logger.info(TAG_LOG, '水印处理链阶段: degraded-begin(return-original)');
-        Logger.info(TAG_LOG, '使用降级方案：返回已获取的原始图像');
-        Logger.info(TAG_LOG, '水印处理链阶段: degraded-done');
-        return originalPixelMap;
-      }
-      
-      try {
-        Logger.info(TAG_LOG, '水印处理链阶段: degraded-begin(re-fetch-original)');
-        const fallbackPixelMap: image.PixelMap = await (async () => {
-          if (!watermarkInfo.organization || watermarkInfo.organization.trim().length === 0) {
-            this.debugLog('degraded-preDelay(emptyOrg) 120ms');
-            await this.sleep(120);
-          }
-          return this.getPhotoPixelMap(photo);
-        })();
-        Logger.info(TAG_LOG, '水印处理链阶段: degraded');
-        Logger.info(TAG_LOG, '使用降级方案：重新获取原始图像');
-        Logger.info(TAG_LOG, '水印处理链阶段: degraded-done');
-        return fallbackPixelMap;
-      } catch (fallbackError) {
-        Logger.error(TAG_LOG, `降级处理也失败: ${String(fallbackError)}`);
-        throw new Error('水印处理完全失败');
-      }
-    } finally {
-      if (watermarkPixelMap) {
-        watermarkPixelMap.release();
-      }
-    }
-  }
-
-  // 获取照片的PixelMap
-  private async getPhotoPixelMap(photo: camera.Photo): Promise<image.PixelMap> {
-    const imageObj: image.Image = photo.main;
-    let imageSource: image.ImageSource | null = null;
-    let stage: string = 'start';
-    
-    try {
-      // 基础状态探测，避免对象字符串化
-      this.debugLog(`photo.main存在=${imageObj ? 'true' : 'false'}`);
-      this.debugLog('开始获取照片组件(JPEG)以构建 ImageSource');
-      stage = 'getComponent';
-      let component: image.Component;
-      try {
-        component = await new Promise<image.Component>((resolve, reject) => {
-          try {
-            imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, comp: image.Component) => {
-              if (errCode || comp === undefined) {
-                stage = 'getComponentError';
-                let codeInfo: string = 'unknown';
-                if (errCode && typeof errCode.code === 'number') {
-                  codeInfo = String(errCode.code);
-                }
-                Logger.error(TAG_LOG, `getComponent(JPEG)失败: code=${codeInfo}`);
-                reject(new Error('getComponent failed'));
-                return;
-              }
-              stage = 'gotComponent';
-              resolve(comp);
-            });
-          } catch (syncThrow) {
-            stage = 'getComponentSyncThrow';
-            Logger.error(TAG_LOG, 'getComponent(JPEG)同步抛错');
-            reject(new Error('getComponent sync throw'));
-          }
-        });
-      } catch (firstErr) {
-        if (stage === 'getComponentSyncThrow') {
-          this.debugLog('getComponentRetry begin');
-          await this.sleep(20);
-          stage = 'getComponentRetry';
-          try {
-            component = await new Promise<image.Component>((resolve, reject) => {
-              try {
-                imageObj.getComponent(image.ComponentType.JPEG, async (errCode: BusinessError, comp: image.Component) => {
-                  if (errCode || comp === undefined) {
-                    stage = 'getComponentError';
-                    let codeInfo: string = 'unknown';
-                    if (errCode && typeof errCode.code === 'number') {
-                      codeInfo = String(errCode.code);
-                    }
-                    Logger.error(TAG_LOG, `getComponent(JPEG)失败: code=${codeInfo}`);
-                    reject(new Error('getComponent failed'));
-                    return;
-                  }
-                  stage = 'gotComponent';
-                  resolve(comp);
-                });
-              } catch (syncThrow2) {
-                stage = 'getComponentSyncThrow';
-                Logger.error(TAG_LOG, 'getComponent(JPEG)同步抛错');
-                reject(new Error('getComponent sync throw'));
-              }
-            });
-            this.debugLog('getComponentRetry ok');
-          } catch (retryErr) {
-            this.debugLog('getComponentRetry fail');
-            stage = 'getComponentRetryFail';
-            throw new Error('getComponent retry failed');
-          }
-        } else {
-          throw new Error('getComponent initial failed');
-        }
-      }
-      const buf: ArrayBuffer = component.byteBuffer;
-      if (!buf) {
-        stage = 'componentBufferEmpty';
-        throw new Error('组件byteBuffer为空');
-      }
-      stage = 'gotBuffer';
-      this.debugLog(`照片组件获取成功，buffer长度=${buf.byteLength}`);
-      
-      imageSource = image.createImageSource(buf);
-      stage = 'gotImageSource';
-      this.debugLog('ImageSource 创建成功，准备生成 PixelMap');
-      
-      // 优先使用异步创建，显式指定可编辑的 RGBA_8888，确保后续像素读写兼容
-      let pixelMap: image.PixelMap;
-      try {
-        stage = 'createPixelMapAsync';
-        pixelMap = await imageSource.createPixelMap({
-          desiredSize: { width: 0, height: 0 },
-          desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
-          editable: true
-        });
-        stage = 'pixelMapAsyncOk';
-        this.debugLog('PixelMap 异步创建成功(RGBA_8888, editable)');
-      } catch (asyncErr) {
-        stage = 'pixelMapAsyncFail';
-        Logger.warn(TAG_LOG, 'createPixelMap 异步创建失败，回退同步创建');
-        stage = 'createPixelMapSync';
-        pixelMap = imageSource.createPixelMapSync();
-        stage = 'pixelMapSyncOk';
-        this.debugLog('PixelMap 同步创建成功');
-      }
-      
-      return pixelMap;
-    } catch (error) {
-      // 避免字符串化错误对象触发桥接层原型检查异常
-      Logger.error(TAG_LOG, `获取照片PixelMap失败(stage=${stage})`);
-      throw new Error('无法获取照片数据');
-    } finally {
-      if (imageSource) {
-        imageSource.release();
-      }
-    }
-  }
-
-  // 微延时辅助（ms）
-  private async sleep(ms: number): Promise<void> {
-    await new Promise<void>(resolve => setTimeout(resolve, ms));
-  }
+  
 
   // 创建水印PixelMap
   private async createWatermarkPixelMap(watermarkInfo: WatermarkInfo, originalPixelMap: image.PixelMap, displayInfo: display.Display): Promise<image.PixelMap> {
@@ -1268,7 +1050,7 @@ export class PhotoManager implements OutputManager {
     let orgForKey = (watermarkInfo.organization && watermarkInfo.organization.length > 0)
       ? watermarkInfo.organization
       : (OrganizationService.getInstance().getOrganization() ||
-        await OrganizationService.getInstance().getOrganizationFromPrefs(this.appContext));
+        await OrganizationService.getInstance().getEffectiveOrganization(this.appContext));
     const baseKey = this.getWatermarkBaseKey(canvasWidth, canvasHeight, orgForKey);
     this.purgeExpiredWatermarkBaseCache();
     let baseEntry = this.watermarkBaseCache.get(baseKey);
@@ -1462,7 +1244,7 @@ export class PhotoManager implements OutputManager {
       // 统一底部文案的组织值来源，避免与缓存键不一致
       const orgValue = (watermarkInfo.organization && watermarkInfo.organization.length > 0)
         ? watermarkInfo.organization
-        : (OrganizationService.getInstance().getOrganization() || '');
+        : (await OrganizationService.getInstance().getEffectiveOrganization(this.appContext) || '');
       ctx.fillText(orgValue, orgValueX, orgValueY, orgValueMaxWidth);
     }
 

@@ -18,6 +18,7 @@ import { camera } from '@kit.CameraKit';
 import { display } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Logger } from 'commons';
+import bundleManager from '@ohos.bundle.bundleManager';
 
 export function limitNumberInRange(src: number, range: number[]) {
   if (range.length < 2) {
@@ -122,3 +123,18 @@ export function calCameraPoint(eventX: number, eventY: number, width: number, he
 }
 
 // [End calCameraPoint]
+
+export async function getSelfAppId(): Promise<string> {
+  try {
+    const info: bundleManager.BundleInfo = await bundleManager.getBundleInfoForSelf(
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_SIGNATURE_INFO
+    );
+    const appId: string = (info && info.signatureInfo && typeof info.signatureInfo.appId === 'string')
+      ? info.signatureInfo.appId
+      : '';
+    return appId;
+  } catch (err) {
+    Logger.warn('getSelfAppId', `getSelfAppId failed: ${String(err)}`);
+    return '';
+  }
+}

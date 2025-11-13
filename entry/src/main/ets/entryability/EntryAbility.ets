@@ -17,6 +17,7 @@ import { ConfigurationConstant, UIAbility } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import WindowUtil from '../utils/WindowUtil';
+import { getSelfAppId } from '../utils/CommonUtil';
 
 const DOMAIN = 0x0000;
 
@@ -25,6 +26,13 @@ export default class EntryAbility extends UIAbility {
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
       hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+      getSelfAppId()
+        .then((appId: string) => {
+          hilog.info(DOMAIN, 'appId', 'appId=%{public}s', appId);
+        })
+        .catch((err: Error) => {
+          hilog.warn(DOMAIN, 'appId', 'getSelfAppId failed %{public}s', String(err));
+        });
     } catch (exception) {
       hilog.error(DOMAIN, 'testTag', `setColorMode failed, code is ${exception.code}, message is ${exception.message}`);
     }

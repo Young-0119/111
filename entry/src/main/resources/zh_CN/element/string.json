@@ -120,5 +120,22 @@
       "name": "permission_LOCATION",
       "value": "用于地理位置"
     }
+    ,
+    {
+      "name": "save_mode_watermark_only",
+      "value": "仅保留水印版"
+    },
+    {
+      "name": "save_mode_keep_both",
+      "value": "同时保留原片与水印"
+    },
+    {
+      "name": "save_mode_current_watermark_only",
+      "value": "保存：水印"
+    },
+    {
+      "name": "save_mode_current_keep_both",
+      "value": "保存：双份"
+    }
   ]
 }
