@@ -49,8 +49,8 @@ export class SensorManager {
       await this.locationService.initialize(context);
       hilog.info(DOMAIN, TAG, 'SensorManager初始化成功');
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `SensorManager初始化失败: ${JSON.stringify(error)}`);
-      throw new Error(`SensorManager初始化失败: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `SensorManager初始化失败: ${String(error)}`);
+      throw new Error(`SensorManager初始化失败: ${String(error)}`);
     }
   }
 
@@ -63,8 +63,8 @@ export class SensorManager {
     try {
       return await this.locationService.getCurrentLocationInfo(forceRefresh);
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `获取位置信息失败: ${JSON.stringify(error)}`);
-      throw new Error(`获取位置信息失败: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `获取位置信息失败: ${String(error)}`);
+      throw new Error(`获取位置信息失败: ${String(error)}`);
     }
   }
   
@@ -76,8 +76,8 @@ export class SensorManager {
     try {
       return await this.locationService.getCurrentLocation();
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `获取位置失败: ${JSON.stringify(error)}`);
-      throw new Error(`获取位置失败: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `获取位置失败: ${String(error)}`);
+      throw new Error(`获取位置失败: ${String(error)}`);
     }
   }
   
@@ -135,7 +135,7 @@ export class SensorManager {
       this.compassSubscribed = true;
       hilog.info(DOMAIN, TAG, 'Compass sensor subscribed successfully');
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `Failed to subscribe compass sensor: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `Failed to subscribe compass sensor: ${String(error)}`);
     }
   }
 
@@ -154,7 +154,7 @@ export class SensorManager {
         this.compassCallback = () => {}; 
         hilog.info(DOMAIN, TAG, 'Compass sensor unsubscribed');
       } catch (error) {
-        hilog.error(DOMAIN, TAG, `Failed to unsubscribe compass sensor: ${JSON.stringify(error)}`);
+        hilog.error(DOMAIN, TAG, `Failed to unsubscribe compass sensor: ${String(error)}`);
       }
     }
   }
@@ -178,7 +178,7 @@ export class SensorManager {
       this.orientationSubscribed = true;
       hilog.info(DOMAIN, TAG, 'Orientation sensor subscribed successfully');
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `Failed to subscribe orientation sensor: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `Failed to subscribe orientation sensor: ${String(error)}`);
     }
   }
 
@@ -193,7 +193,7 @@ export class SensorManager {
         this.orientationCallback = () => {};
         hilog.info(DOMAIN, TAG, 'Orientation sensor unsubscribed');
       } catch (error) {
-        hilog.error(DOMAIN, TAG, `Failed to unsubscribe orientation sensor: ${JSON.stringify(error)}`);
+        hilog.error(DOMAIN, TAG, `Failed to unsubscribe orientation sensor: ${String(error)}`);
       }
     }
   }
@@ -217,7 +217,7 @@ export class SensorManager {
       this.barometerSubscribed = true;
       hilog.info(DOMAIN, TAG, 'Barometer sensor subscribed successfully');
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `Failed to subscribe barometer sensor: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `Failed to subscribe barometer sensor: ${String(error)}`);
     }
   }
 
@@ -232,7 +232,7 @@ export class SensorManager {
         this.barometerCallback = () => {};
         hilog.info(DOMAIN, TAG, 'Barometer sensor unsubscribed');
       } catch (error) {
-        hilog.error(DOMAIN, TAG, `Failed to unsubscribe barometer sensor: ${JSON.stringify(error)}`);
+        hilog.error(DOMAIN, TAG, `Failed to unsubscribe barometer sensor: ${String(error)}`);
       }
     }
   }

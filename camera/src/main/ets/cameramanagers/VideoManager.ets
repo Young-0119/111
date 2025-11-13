@@ -235,7 +235,7 @@ export class VideoManager implements OutputManager {
         }
         this.videoProfile = videoProfile;
       } catch (error) {
-        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${JSON.stringify(error)}`);
+        Logger.error(TAG_LOG, `Failed to createPhotoOutput. error: ${String(error)}`);
       }
     }
   }

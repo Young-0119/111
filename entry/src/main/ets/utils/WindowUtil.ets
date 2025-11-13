@@ -24,7 +24,7 @@ class WindowUtil {
       await window.setWindowLayoutFullScreen(true);
       await window.setWindowSystemBarEnable([]);
     } catch (exception) {
-      Logger.error(TAG, 'Failed to enter immersive. Cause:', JSON.stringify(exception));
+      Logger.error(TAG, 'Failed to enter immersive. Cause:', String(exception));
     }
   }
 

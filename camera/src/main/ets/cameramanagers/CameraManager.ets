@@ -32,21 +32,11 @@ export class CameraManager {
       this.cameraManager = camera.getCameraManager(context);
       // [End cameraManager]
       this.outputManagers = outputManagers;
-      this.addCameraStatusListener();
     } catch (exception) {
       Logger.error(TAG, `constructor failed, code is ${exception.code}, message is ${exception.message}`);
     }
   }
 
-  addCameraStatusListener() {
-    this.cameraManager?.on('cameraStatus', (err: BusinessError, statusInfo: camera.CameraStatusInfo) => {
-      if (err && err.message) {
-        Logger.error(TAG, 'cameraStatus with errorMessage = ' + err.message);
-        return;
-      }
-      Logger.info(TAG, `cameraStatusInfo: camera is ${statusInfo.camera.cameraId}, status is ${statusInfo.status}`);
-    });
-  }
 
   getCameraManager() {
     return this.cameraManager;
@@ -93,7 +83,7 @@ export class CameraManager {
       this.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO);
       this.setExposureMode(camera.ExposureMode.EXPOSURE_MODE_AUTO);
     } catch (e) {
-      Logger.error(TAG, `Failed to start camera session. Cause ${JSON.stringify(e)}`);
+      Logger.error(TAG, `Failed to start camera session. Cause ${String(e)}`);
     }
   }
 
@@ -166,7 +156,7 @@ export class CameraManager {
       }
       this.session?.setFocusMode(focusMode);
     } catch (e) {
-      Logger.error(TAG, 'setFocusMode error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setFocusMode error ' + String(e));
     }
   }
 
@@ -177,7 +167,7 @@ export class CameraManager {
     try {
       this.session?.setFocusPoint(point);
     } catch (e) {
-      Logger.error(TAG, 'setFocusPoint error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setFocusPoint error ' + String(e));
     }
   }
 
@@ -193,7 +183,7 @@ export class CameraManager {
       }
       this.session?.setExposureMode(exposureMode);
     } catch (e) {
-      Logger.error(TAG, 'setExposureMode error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setExposureMode error ' + String(e));
     }
   }
 
@@ -204,7 +194,7 @@ export class CameraManager {
     try {
       this.session?.setMeteringPoint(point);
     } catch (e) {
-      Logger.error(TAG, 'setMeteringPoint error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setMeteringPoint error ' + String(e));
     }
   }
 
@@ -214,7 +204,7 @@ export class CameraManager {
     try {
       this.session?.setZoomRatio(zoom);
     } catch (e) {
-      Logger.error(TAG, 'setZoomRatio error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setZoomRatio error ' + String(e));
     }
   }
 
@@ -223,7 +213,7 @@ export class CameraManager {
     try {
       this.session?.setSmoothZoom(zoom);
     } catch (e) {
-      Logger.error(TAG, 'setSmoothZoom error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setSmoothZoom error ' + String(e));
     }
   }
 
@@ -239,7 +229,7 @@ export class CameraManager {
       }
       this.session?.setFlashMode(flashMode);
     } catch (e) {
-      Logger.error(TAG, 'setFlashMode error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setFlashMode error ' + String(e));
     }
   }
 
@@ -252,10 +242,10 @@ export class CameraManager {
       if (isSupported) {
         session.setVideoStabilizationMode(stabilizationMode);
       } else {
-        Logger.error(TAG, 'stabilizationMode is not supported: ' + JSON.stringify(stabilizationMode));
+        Logger.error(TAG, 'stabilizationMode is not supported: ' + String(stabilizationMode));
       }
     } catch (e) {
-      Logger.error(TAG, 'setVideoStabilizationMode error ' + JSON.stringify(e));
+      Logger.error(TAG, 'setVideoStabilizationMode error ' + String(e));
     }
   }
 }

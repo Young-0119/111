@@ -19,6 +19,7 @@ export { PhotoManager } from './src/main/ets/cameramanagers/PhotoManager';
 export { VideoManager, AVRecorderState } from './src/main/ets/cameramanagers/VideoManager';
 export { GridLine } from './src/main/ets/components/GridLine';
 export { LevelIndicator } from './src/main/ets/components/LevelIndicator';
+export { OrganizationService } from './src/main/ets/dataservices/OrganizationService';
 // 临时注释掉以下组件导出以排除编译
 // export { AltitudeCalculator } from './src/main/ets/utils/AltitudeCalculator';
 // export { SatelliteCalculator } from './src/main/ets/utils/SatelliteCalculator';

@@ -65,8 +65,8 @@ export class AltitudeCalculator {
       await this.startPressureSensor();
       hilog.info(DOMAIN, TAG, 'AltitudeCalculator初始化成功');
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `AltitudeCalculator初始化失败: ${JSON.stringify(error)}`);
-      throw new Error(`AltitudeCalculator初始化失败: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `AltitudeCalculator初始化失败: ${String(error)}`);
+      throw new Error(`AltitudeCalculator初始化失败: ${String(error)}`);
     }
   }
 
@@ -89,8 +89,8 @@ export class AltitudeCalculator {
       this.pressureSensorSubscribed = true;
       hilog.info(DOMAIN, TAG, '气压传感器启动成功');
     } catch (error) {
-      hilog.error(DOMAIN, TAG, `气压传感器启动失败: ${JSON.stringify(error)}`);
-      throw new Error(`气压传感器启动失败: ${JSON.stringify(error)}`);
+      hilog.error(DOMAIN, TAG, `气压传感器启动失败: ${String(error)}`);
+      throw new Error(`气压传感器启动失败: ${String(error)}`);
     }
   }
 
@@ -105,7 +105,7 @@ export class AltitudeCalculator {
         this.pressureCallback = () => {};
         hilog.info(DOMAIN, TAG, '气压传感器已停止');
       } catch (error) {
-        hilog.error(DOMAIN, TAG, `停止气压传感器失败: ${JSON.stringify(error)}`);
+        hilog.error(DOMAIN, TAG, `停止气压传感器失败: ${String(error)}`);
       }
     }
   }

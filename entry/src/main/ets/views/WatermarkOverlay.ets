@@ -13,42 +13,44 @@
  * limitations under the License.
  */
 
-import { preferences } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Logger } from 'commons';
-
-export interface WatermarkInfo {
-  timestamp: string;
-  weather?: string;
-  location?: string;
-  altitude?: string;
-  direction?: string;
-  longitude?: string;
-  latitude?: string;
-  organization?: string;
-}
+import { OrganizationService } from 'camera';
+import { WatermarkInfo } from '../types/DataInterfaces';
+import { PhotoManager } from 'camera';
 
 @Component
 export struct WatermarkOverlay {
   @ObjectLink watermarkInfo: WatermarkInfo;
   @Prop previewWidth: number = 0;  // 预览区域宽度
   @Prop previewHeight: number = 0; // 预览区域高度
+  @Prop photoManager?: PhotoManager;
   @State currentOrganization: string = '';
   @State showEditDialog: boolean = false;
   @State editingOrganization: string = '';
-  private PREF_KEY_ORGANIZATION = 'organization_name';
+  private orgListener?: (org: string) => void;
   
   aboutToAppear() {
+    // 初始化组织服务并加载当前值
+    OrganizationService.getInstance().initialize(getContext(this));
     this.loadOrganization();
+    // 订阅制作单位变更事件，保持视图层与服务内存态一致
+    this.orgListener = (org: string) => {
+      this.currentOrganization = org;
+      this.watermarkInfo.organization = org;
+    };
+    OrganizationService.getInstance().addListener(this.orgListener);
     this.updateTimestamp();
-    // 调试信息：显示实际渲染尺寸和预览屏尺寸
-    Logger.debug('WatermarkOverlay', `预览屏尺寸: ${this.previewWidth}x${this.previewHeight}, 水印渲染尺寸: ${this.getWatermarkWidth()}x${this.getWatermarkHeight()}`);
   }
-
-  onPageShow() {
-    // 页面显示时输出调试信息
-    Logger.debug('WatermarkOverlay', `WatermarkOverlay显示 - 预览屏尺寸: ${this.previewWidth}x${this.previewHeight}, 水印渲染尺寸: ${this.getWatermarkWidth()}x${this.getWatermarkHeight()}`);
+  
+  aboutToDisappear() {
+    // 取消订阅，避免泄漏
+    if (this.orgListener) {
+      OrganizationService.getInstance().removeListener(this.orgListener);
+      this.orgListener = undefined;
+    }
   }
+  
   
   private getCurrentTimestamp(): string {
     const now = new Date();
@@ -68,26 +70,23 @@ export struct WatermarkOverlay {
     }, 1000);
   }
   
-  private async loadOrganization() {
+  private loadOrganization() {
     try {
-      const prefs: preferences.Preferences = await preferences.getPreferences(getContext(this), 'watermark_prefs');
-      this.currentOrganization = await prefs.get(this.PREF_KEY_ORGANIZATION, this.watermarkInfo.organization || '') as string;
-      // 更新传入的watermarkInfo
-      this.watermarkInfo.organization = this.currentOrganization;
+      const org = OrganizationService.getInstance().getOrganization() || this.watermarkInfo.organization || '';
+      this.currentOrganization = org;
+      this.watermarkInfo.organization = org;
     } catch (err) {
-      Logger.error('WatermarkOverlay', `loadOrganization failed: ${err}`);
+      Logger.error('WatermarkOverlay', `loadOrganization failed: ${String(err)}`);
     }
   }
   
   private async saveOrganization(newOrg: string) {
     try {
-      const prefs: preferences.Preferences = await preferences.getPreferences(getContext(this), 'watermark_prefs');
-      await prefs.put(this.PREF_KEY_ORGANIZATION, newOrg);
-      await prefs.flush();
+      await OrganizationService.getInstance().setOrganization(newOrg, getContext(this));
       this.currentOrganization = newOrg;
       this.watermarkInfo.organization = newOrg;
     } catch (err) {
-      Logger.error('WatermarkOverlay', `saveOrganization failed: ${err}`);
+      Logger.error('WatermarkOverlay', `saveOrganization failed: ${String(err)}`);
     }
   }
   
@@ -96,17 +95,17 @@ export struct WatermarkOverlay {
     // 使用全屏容器实现居中显示
     Stack() {
       Column() {
-        Text('编辑制作单位')
+        Text('制作单位')
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
           .fontColor('#333333')
           .margin({ bottom: 16 })
 
-        TextInput({ placeholder: '请输入制作单位名称', text: this.editingOrganization })
+        TextInput({ placeholder: '请输入', text: this.editingOrganization })
           .width('100%')
           .height(36)
           .fontSize(14)
-          .backgroundColor('#f8f8f8')
+          .backgroundColor('#00000044')
           .borderRadius(4)
           .padding({ left: 12, right: 12 })
           .margin({ bottom: 16 })

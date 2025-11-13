@@ -11,29 +11,19 @@ import { CompassMain } from '../views/CompassMain';
 // 临时注释掉以下导入以排除编译
 // import { AltitudeCalculator } from 'camera';
 // import { SatelliteCalculator } from 'camera';
-import { LocationService } from 'camera';
+// 移除无效的 LocationService 引用，改用 geoLocationManager 直接获取位置
 import preferences from '@ohos.data.preferences';
 import { common } from '@kit.AbilityKit';
 import geoLocationManager from '@ohos.geoLocationManager';
+import { LocationInfo, SatelliteParams } from '../types/DataInterfaces';
 
-// 卫星参数接口
-interface SatelliteParams {
-  longitude: number;
-  name: string;
-  description: string;
-}
-
-// 定义位置信息接口
-interface LocationInfo {
-  directionLon: string;
-  valueLon: string;
-  directionLat: string;
-  valueLat: string;
-}
+// 统一从 types 引入接口定义，避免重复声明
 
 // 可复用的卫星寻星页面内容组件
 @Component
 export struct IndexContent {
+  // 父组件传入：页面是否处于可见状态（用于控制传感器订阅）
+  @Prop @Watch('onActiveChanged') isActive: boolean = false;
   // 状态变量
   @State azimuth: number = 0; // 设备方位角
   @State pitch: number = 0; // 俯仰角
@@ -70,10 +60,7 @@ export struct IndexContent {
   @State directionName: string = '北';
   @State formattedDirection: number = 0;
   
-  // 位置服务实例
-  private locationService: LocationService = new LocationService();
-  // 临时注释掉海拔计算器实例
-  // private altitudeCalculator: AltitudeCalculator = AltitudeCalculator.getInstance();
+  // 临时移除第三方 LocationService 与 AltitudeCalculator 依赖，改为本地实现
 
   constructor() {
     super();
@@ -108,8 +95,8 @@ export struct IndexContent {
           this.showPrivacyDialog = true;
         }, 100);
       }
-    } catch {
-      console.error('检查隐私政策状态失败');
+    } catch (error) {
+      console.error('检查隐私政策状态失败', error);
       // 出错时延迟显示隐私政策弹窗
       setTimeout(() => {
         this.showPrivacyDialog = true;
@@ -134,8 +121,8 @@ export struct IndexContent {
       setTimeout(() => {
         this.requestLocationPermission();
       }, 500);
-    } catch {
-      console.error('保存隐私政策同意状态失败');
+    } catch (error) {
+      console.error('保存隐私政策同意状态失败', error);
       this.locationStatus = '隐私政策设置失败';
     }
   }
@@ -155,8 +142,8 @@ export struct IndexContent {
       
       // 设置默认位置，不申请权限
       await this.setDefaultLocation();
-    } catch {
-      console.error('保存隐私政策拒绝状态失败');
+    } catch (error) {
+      console.error('保存隐私政策拒绝状态失败', error);
       this.locationStatus = '隐私政策设置失败';
       await this.setDefaultLocation();
     }
@@ -165,10 +152,30 @@ export struct IndexContent {
   aboutToAppear() {
     // 初始化位置服务
     this.initLocationService();
-    
-    // 检查隐私政策同意状态
-    this.checkPrivacyAgreement();
-    
+    // 仅在可见时申请隐私与订阅传感器
+    if (this.isActive) {
+      this.checkPrivacyAgreement();
+      this.startSensors();
+    }
+  }
+
+  aboutToDisappear() {
+    this.stopSensors();
+  }
+
+  // 仅在可见时订阅/取消传感器
+  onActiveChanged(newVal: boolean) {
+    if (newVal) {
+      // 页面变为可见：申请隐私并订阅传感器
+      this.checkPrivacyAgreement();
+      this.startSensors();
+    } else {
+      // 页面不可见：取消订阅，节省电量
+      this.stopSensors();
+    }
+  }
+
+  private startSensors() {
     // 订阅方向传感器
     try {
       sensor.on(sensor.SensorId.ORIENTATION, (data: sensor.OrientationResponse) => {
@@ -177,47 +184,38 @@ export struct IndexContent {
         this.pitch = -(data.beta || 0);
         this.roll = data.gamma || 0;
         this.deviceAzimuth = this.azimuth;
-        
         // 更新方向信息
         this.updateDirectionInfo(this.azimuth);
       }, { interval: 100000000 });
-    } catch {
-      console.error('传感器订阅失败');
+    } catch (error) {
+      console.error('方向传感器订阅失败', error);
     }
-    
     // 订阅气压传感器
     try {
       sensor.on(sensor.SensorId.BAROMETER, (data: sensor.BarometerResponse) => {
         this.pressure = data.pressure || 0;
-        // 实时计算海拔（临时使用简单计算）
-        // const calculatedAltitude: number | null = this.altitudeCalculator.calculateAltitudeFromPressure(this.pressure);
-        // if (calculatedAltitude !== null) {
-        //   this.altitude = calculatedAltitude;
-        // }
       }, { interval: 1000000000 });
-    } catch {
-      console.error('气压传感器订阅失败');
+    } catch (error) {
+      console.error('气压传感器订阅失败', error);
     }
-    
     // 订阅磁场传感器
     try {
       sensor.on(sensor.SensorId.MAGNETIC_FIELD, (data: sensor.MagneticFieldResponse) => {
         const magnitude = Math.sqrt((data.x || 0) ** 2 + (data.y || 0) ** 2 + (data.z || 0) ** 2);
         this.magneticField = magnitude;
       }, { interval: 1000000000 });
-    } catch {
-      console.error('磁场传感器订阅失败');
+    } catch (error) {
+      console.error('磁场传感器订阅失败', error);
     }
   }
 
-  aboutToDisappear() {
-    // 取消传感器订阅
+  private stopSensors() {
     try {
       sensor.off(sensor.SensorId.ORIENTATION);
       sensor.off(sensor.SensorId.BAROMETER);
       sensor.off(sensor.SensorId.MAGNETIC_FIELD);
-    } catch {
-      console.error('传感器取消订阅失败');
+    } catch (error) {
+      console.error('传感器取消订阅失败', error);
     }
   }
 
@@ -288,8 +286,8 @@ export struct IndexContent {
         this.getCurrentLocation(); // 即使权限被拒绝也尝试获取位置
         return false;
       }
-    } catch {
-      console.error('权限请求失败');
+    } catch (error) {
+      console.error('权限请求失败', error);
       this.getCurrentLocation(); // 即使权限请求失败也尝试获取位置
       return false;
     }
@@ -301,58 +299,35 @@ export struct IndexContent {
   async getCurrentLocation(): Promise<void> {
     this.locationStatus = '正在获取位置...';
 
-    // 使用 dataservices 的快照接口
-    const snapshot: geoLocationManager.Location | null = this.locationService.getCurrentLocation();
-    if (snapshot) {
-      console.info('定位成功(快照):', snapshot);
-      this.longitude = Number(snapshot.longitude || 0);
-      this.latitude = Number(snapshot.latitude || 0);
+    try {
+      // 使用系统地理定位的单次请求，超时10秒，优先精度
+      const requestInfo: geoLocationManager.SingleLocationRequest = {
+        locatingTimeoutMs: 10000,
+        locatingPriority: geoLocationManager.LocatingPriority.PRIORITY_ACCURACY
+      };
+
+      const loc = await geoLocationManager.getCurrentLocation(requestInfo);
+      console.info('定位成功:', loc);
+      this.longitude = Number(loc.longitude ?? 0);
+      this.latitude = Number(loc.latitude ?? 0);
       this.locationStatus = '位置获取成功';
       this.updateLocationFormat(this.longitude, this.latitude);
       this.isLocationEnabled = true;
 
       // 优先基于气压计算海拔，否则使用位置中的海拔
       if (this.pressure > 0) {
-        const calculatedAltitude: number | null = this.altitudeCalculator.calculateAltitudeFromPressure(this.pressure);
+        const calculatedAltitude: number | null = this.calculateAltitudeFromPressure(this.pressure);
         if (calculatedAltitude !== null) {
           this.altitude = calculatedAltitude;
         }
-      } else if (snapshot.altitude !== null && snapshot.altitude !== undefined) {
-        this.altitude = Number(snapshot.altitude);
+      } else if (loc.altitude !== null && loc.altitude !== undefined) {
+        this.altitude = Number(loc.altitude);
       }
 
       await this.calculateSatelliteAngles();
-      return;
-    }
-
-    // 没有快照：进入定位中状态，并监听一次位置更新
-    this.locationStatus = '定位中...';
-    const listener = async (loc: geoLocationManager.Location) => {
-      try {
-        this.longitude = Number(loc.longitude || 0);
-        this.latitude = Number(loc.latitude || 0);
-        this.locationStatus = '位置获取成功';
-        this.updateLocationFormat(this.longitude, this.latitude);
-        this.isLocationEnabled = true;
-
-        if (this.pressure > 0) {
-          const calculatedAltitude: number | null = this.altitudeCalculator.calculateAltitudeFromPressure(this.pressure);
-          if (calculatedAltitude !== null) {
-            this.altitude = calculatedAltitude;
-          }
-        } else if (loc.altitude !== null && loc.altitude !== undefined) {
-          this.altitude = Number(loc.altitude);
-        }
-        await this.calculateSatelliteAngles();
-      } finally {
-        // 只监听一次
-        try { this.locationService.removeLocationListener(listener); } catch {}
-      }
-    };
-    this.locationService.addLocationListener(listener);
-
-    // 若尚未启用，则设置默认位置以保证页面正常显示
-    if (!this.isLocationEnabled) {
+    } catch (error) {
+      console.error('获取位置失败:', error);
+      this.locationStatus = '定位失败，使用默认位置';
       await this.setDefaultLocation();
     }
   }
@@ -422,6 +397,91 @@ export struct IndexContent {
   }
 
   /**
+   * 度数/弧度转换辅助
+   */
+  private degToRad(degrees: number): number {
+    return degrees * Math.PI / 180.0;
+  }
+  private radToDeg(radians: number): number {
+    return radians * 180.0 / Math.PI;
+  }
+
+  /**
+   * 本地计算：指定卫星的方位角
+   */
+  private calcAzimuthWithSatellite(userLon: number, userLat: number, satLon: number): number {
+    const userLongRad = this.degToRad(userLon);
+    const userLatRad = this.degToRad(userLat);
+    const satLongRad = this.degToRad(satLon);
+    const longDiff = satLongRad - userLongRad;
+    let azimuth = Math.atan2(Math.sin(longDiff), Math.cos(userLatRad) * Math.tan(0) - Math.sin(userLatRad) * Math.cos(longDiff));
+    azimuth = this.radToDeg(azimuth);
+    if (azimuth < 0) {
+      azimuth += 360;
+    }
+    return azimuth;
+  }
+
+  /**
+   * 本地计算：指定卫星的俯仰角
+   */
+  private calcElevationWithSatellite(userLon: number, userLat: number, satLon: number): number {
+    const userLongRad = this.degToRad(userLon);
+    const userLatRad = this.degToRad(userLat);
+    const satLongRad = this.degToRad(satLon);
+    const longDiff = satLongRad - userLongRad;
+    const earthRadius = 6378.0;
+    const geoHeight = 35786.0;
+    const r = (earthRadius + geoHeight) / earthRadius;
+    let elevation = Math.atan2(r * Math.sin(userLatRad) - 1, r * Math.cos(userLatRad) * Math.cos(longDiff));
+    elevation = this.radToDeg(elevation);
+    return elevation;
+  }
+
+  /**
+   * 本地计算：指定卫星的极化角
+   */
+  private calcPolarizationWithSatellite(userLon: number, userLat: number, satLon: number): number {
+    const userLongRad = this.degToRad(userLon);
+    const userLatRad = this.degToRad(userLat);
+    const satLongRad = this.degToRad(satLon);
+    const longDiff = satLongRad - userLongRad;
+    let polarization = Math.atan(Math.tan(longDiff) / Math.sin(userLatRad));
+    polarization = this.radToDeg(polarization);
+    if (userLat < 0) {
+      polarization = 180 - polarization;
+    }
+    return polarization;
+  }
+
+  /**
+   * 本地计算：基于气压估算海拔（米）
+   */
+  private calculateAltitudeFromPressure(pressure: number | null | undefined): number | null {
+    if (pressure === null || pressure === undefined || typeof pressure !== 'number' || isNaN(pressure)) {
+      return null;
+    }
+    // 气压合理范围：300-1100 hPa
+    if (!(pressure > 300 && pressure < 1100)) {
+      return null;
+    }
+    const STANDARD_PRESSURE = 1013.25;
+    const ALTITUDE_CONSTANT = 44330;
+    const PRESSURE_EXPONENT = 0.1903;
+    try {
+      const altitude = ALTITUDE_CONSTANT * (1 - Math.pow(pressure / STANDARD_PRESSURE, PRESSURE_EXPONENT));
+      // 合理范围：-500 到 20000 米
+      if (typeof altitude !== 'number' || isNaN(altitude) || !(altitude > -500 && altitude < 20000)) {
+        return null;
+      }
+      return altitude;
+    } catch (error) {
+      console.error('海拔计算失败:', error);
+      return null;
+    }
+  }
+
+  /**
    * 计算卫星角度
    */
   async calculateSatelliteAngles() {
@@ -430,39 +490,17 @@ export struct IndexContent {
     this.satelliteName = satParams.name; // 更新卫星名称 
     
     try {
-      // 使用SatelliteCalculator的新方法，自动获取当前位置
-      // const calculator: SatelliteCalculator = SatelliteCalculator.getInstance();
-      
-      // 计算方位角
-      const azimuthResult: number | null = await calculator.calculateAzimuthFromCurrentLocation(satLon);
-      if (azimuthResult !== null) {
-        this.targetAzimuth = azimuthResult;
+      if (this.latitude !== 0 || this.longitude !== 0) {
+        this.targetAzimuth = this.calcAzimuthWithSatellite(this.longitude, this.latitude, satLon);
+        this.targetElevation = this.calcElevationWithSatellite(this.longitude, this.latitude, satLon);
+        this.polarizationAngle = this.calcPolarizationWithSatellite(this.longitude, this.latitude, satLon);
       }
-      
-      // 计算俯仰角
-      const elevationResult: number | null = await calculator.calculateElevationFromCurrentLocation(satLon);
-      if (elevationResult !== null) {
-        this.targetElevation = elevationResult;
-      }
-      
-      // 计算极化角
-      const polarizationResult: number | null = await calculator.calculatePolarizationFromCurrentLocation(satLon);
-      if (polarizationResult !== null) {
-        this.polarizationAngle = polarizationResult;
-      }
-    } catch {
-      console.error('计算卫星角度失败');
-      // 如果自动获取失败，使用当前已有的经纬度作为备用方案
-      if (this.latitude !== 0 && this.longitude !== 0) {
-        const calculator = SatelliteCalculator.getInstance();
-        this.targetAzimuth = calculator.calculateAzimuthWithSatellite(this.longitude, this.latitude, satLon);
-        this.targetElevation = calculator.calculateElevationWithSatellite(this.longitude, this.latitude, satLon);
-        this.polarizationAngle = calculator.calculatePolarizationWithSatellite(this.longitude, this.latitude, satLon);
-      }
+    } catch (error) {
+      console.error('计算卫星角度失败:', error);
     }
     
-    // 模拟海拔计算（基于气压，使用AltitudeCalculator统一处理）
-    const calculatedAltitude: number | null = this.altitudeCalculator.calculateAltitudeFromPressure(this.pressure);
+    // 海拔计算（基于气压，本地实现）
+    const calculatedAltitude: number | null = this.calculateAltitudeFromPressure(this.pressure);
     if (calculatedAltitude !== null) {
       this.altitude = calculatedAltitude;
     }

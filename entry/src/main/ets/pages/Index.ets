@@ -26,6 +26,7 @@ import {
   PreviewManager,
   VideoManager
 } from 'camera';
+import { IndexContent as CompassPage } from './Compass';
 import CameraConstant from '../constants/Constants';
 import { calCameraPoint, getClampedChildPosition, limitNumberInRange, showToast } from '../utils/CommonUtil';
 import RefreshableTimer from '../utils/RefreshableTimer';
@@ -34,7 +35,8 @@ import ZoomButtonsView from '../views/ZoomButtonsView';
 import ModeButtonsView from '../views/ModeButtonsView';
 import SettingButtonsView from '../views/SettingButtonsView';
 import OperateButtonsView from '../views/OperateButtonsView';
-import { WatermarkOverlay, WatermarkInfo } from '../views/WatermarkOverlay';
+import { WatermarkOverlay } from '../views/WatermarkOverlay';
+import { WatermarkInfo } from '../types/DataInterfaces';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
 import { Logger } from 'commons';
 
@@ -102,6 +104,8 @@ struct Index {
     organization: ''
   };
   @State isWatermarkVisible: boolean = true;
+  // Swiper 控制与当前页索引：0-相机主页，1-指南针页
+  @State currentTab: number = 0;
 
   async aboutToAppear() {
     this.addGravityEventListener();
@@ -160,8 +164,10 @@ struct Index {
 
   async onFoldStatusChange() {
     await this.cameraManager.release();
-    await this.startCamera();
-    this.syncButtonSettings();
+    if (this.currentTab === 0) {
+      await this.startCamera();
+      this.syncButtonSettings();
+    }
   }
 
   // [Start registerApplicationStateChange]
@@ -174,10 +180,14 @@ struct Index {
         } catch (err) {
           Logger.warn(TAG, `前台预热失败: ${String(err)}`);
         }
-        await this.startCamera();
-        // [StartExclude registerApplicationStateChange]
-        this.syncButtonSettings();
-        // [EndExclude registerApplicationStateChange]
+        if (this.currentTab === 0) {
+          await this.startCamera();
+          // [StartExclude registerApplicationStateChange]
+          this.syncButtonSettings();
+          // [EndExclude registerApplicationStateChange]
+        } else {
+          this.cameraManager.release();
+        }
       },
       onApplicationBackground: () => {
         // [StartExclude registerApplicationStateChange]
@@ -365,7 +375,8 @@ struct Index {
         WatermarkOverlay({
           watermarkInfo: this.watermarkInfo,
           previewWidth: this.previewVM.getPreviewWidth(),
-          previewHeight: this.previewVM.getPreviewHeight()
+          previewHeight: this.previewVM.getPreviewHeight(),
+          photoManager: this.photoManager
         })
       }
     }
@@ -463,7 +474,9 @@ struct Index {
     })
   }
 
-  build() {
+  // 将原有主页 UI 封装为构建器，便于作为 Swiper 子项
+  @Builder
+  cameraPage() {
     RelativeContainer() {
       this.preview()
       this.funcButtonsView()
@@ -517,6 +530,50 @@ struct Index {
     .width('100%')
     .backgroundColor(Color.Black)
     .onClick(() => {
+    })
+  }
+
+  // Swiper 切换处理：进入相机页或指南针页
+  private onSwiperChange(index: number) {
+    this.currentTab = index;
+    if (index === 0) {
+      this.onEnterCameraTab();
+    } else {
+      this.onEnterCompassTab();
+    }
+  }
+
+  private onEnterCameraTab() {
+    try {
+      this.previewVM.closePreviewBlur();
+      this.sleepTimer?.refresh();
+      this.startCamera();
+      this.syncButtonSettings();
+    } catch {}
+  }
+
+  private onEnterCompassTab() {
+    try {
+      this.previewVM.openPreviewBlur();
+      this.cameraManager.release();
+    } catch {}
+  }
+
+  build() {
+    Swiper() {
+      // 页 0：相机主页
+      this.cameraPage()
+      // 页 1：指南针页面
+      CompassPage({ isActive: this.currentTab === 1 })
+    }
+    .index(this.currentTab)
+    .loop(false)
+    .indicator(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(Color.Black)
+    .onChange((index: number) => {
+      this.onSwiperChange(index);
     })
   }
 }

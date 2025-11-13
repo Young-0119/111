@@ -113,7 +113,7 @@ export class PreviewManager implements OutputManager {
     try {
       this.output?.setFrameRate(minFps, maxFps);
     } catch (e) {
-      Logger.error(TAG_LOG, 'setFrameRate error ' + JSON.stringify(e));
+      Logger.error(TAG_LOG, 'setFrameRate error ' + String(e));
     }
   }
 
