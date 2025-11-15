@@ -27,6 +27,7 @@ import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { Logger } from 'commons';
 import { OrganizationService } from '../dataservices/OrganizationService';
+import GeoDataService from '../dataservices/GeoDataService';
 import OutputManager, { CreateOutputConfig } from './OutputManager';
 import CameraConstant from '../constants/CameraConstants';
 // 内联水印处理所需接口与类型
@@ -56,6 +57,11 @@ interface WatermarkBaseMetrics {
   valueMaxWidth: number;
   infoItemsCount: number;
   infoItemsTextY: Array<number>;
+}
+
+interface LocationWeatherResult {
+  location: string;
+  weather: string;
 }
 
 interface WatermarkBaseCacheEntry {
@@ -169,6 +175,19 @@ export class PhotoManager implements OutputManager {
   private cachedInfoExpiresAt: number = 0;
   private cachedInfoValues: WatermarkDynamicInfo | null = null; // weather/location/altitude/direction/longitude/latitude/organization
   private orgListener?: (org: string) => void;
+  private externalLocWeaProvider?: () => Promise<LocationWeatherResult>;
+  private debugWatermark: boolean = false;
+
+  public setLocationWeatherProvider(provider: () => Promise<LocationWeatherResult>): void {
+    this.externalLocWeaProvider = provider;
+    if (this.debugWatermark) {
+      Logger.info(TAG_LOG, 'provider:set ok');
+    }
+  }
+
+  public setDebugWatermark(enabled: boolean): void {
+    this.debugWatermark = !!enabled;
+  }
 
   /**
    * 计算水印绘制尺寸（考虑设备像素比）
@@ -189,17 +208,24 @@ export class PhotoManager implements OutputManager {
       ? orgOverride
       : (OrganizationService.getInstance().getOrganization() ||
         await OrganizationService.getInstance().getEffectiveOrganization(this.appContext));
+    const snap = GeoDataService.getInstance().getSnapshot();
+    if (this.debugWatermark) {
+      Logger.info(TAG_LOG, `prewarm org='${orgValue}' provider=${this.externalLocWeaProvider ? 'true' : 'false'} snap{alt='${snap.altitude.display}',dir='${snap.direction.display}',lon='${snap.longitude.display}',lat='${snap.latitude.display}'}`);
+    }
     const values: WatermarkDynamicInfo = {
       weather: await this.getWeatherInfo(),
       location: await this.getLocationInfo(),
-      altitude: await this.getAltitudeInfo(),
-      direction: await this.getDirectionInfo(),
-      longitude: this.location?.longitude?.toString() || '获取中...',
-      latitude: this.location?.latitude?.toString() || '获取中...',
+      altitude: snap.altitude.display || '获取中',
+      direction: snap.direction.display || '获取中',
+      longitude: snap.longitude.display || '获取中',
+      latitude: snap.latitude.display || '获取中',
       organization: orgValue
     };
     this.cachedInfoValues = values;
     this.cachedInfoExpiresAt = Date.now() + this.watermarkInfoCacheTTL;
+    if (this.debugWatermark) {
+      Logger.info(TAG_LOG, `prewarm cache weather='${values.weather}' location='${values.location}' ttl=${this.watermarkInfoCacheTTL}`);
+    }
   }
 
   /**
@@ -226,8 +252,9 @@ export class PhotoManager implements OutputManager {
 
       // 使用当前（或预热后的）信息项绘制，底图快照会在方法内被缓存
       const now = new Date();
+      const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
       const wmInfo: WatermarkInfo = {
-        timestamp: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`,
+        timestamp: `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ${weekdays[now.getDay()]} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
         weather: this.cachedInfoValues?.weather || '晴朗',
         location: this.cachedInfoValues?.location || '定位中...',
         altitude: this.cachedInfoValues?.altitude || '计算中...',
@@ -262,7 +289,10 @@ export class PhotoManager implements OutputManager {
     // 顺序初始化与预热：确保组织值到位后再构建底图，避免 key 的 org 为空
     this.initOrganizationFromPrefs()
       .then(() => this.initSaveModeFromPrefs())
-      .then(() => this.prewarmWatermarkInfo())
+      .then(async () => {
+        try { await GeoDataService.getInstance().start(this.appContext) } catch (_) {}
+        await this.prewarmWatermarkInfo()
+      })
       .then(() => this.prewarmWatermarkBaseCacheForExpectedSize())
       .catch((err: Error | BusinessError) =>
         Logger.warn(TAG_LOG, `启动阶段预热失败: ${String(err)}`)
@@ -521,7 +551,8 @@ export class PhotoManager implements OutputManager {
    */
   private async getWatermarkInfo(): Promise<WatermarkInfo> {
     const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+    const timestamp = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ${weekdays[now.getDay()]} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     
     // 优先使用缓存的动态信息项（不含时间戳），过期则刷新
     const nowMs = Date.now();
@@ -548,14 +579,59 @@ export class PhotoManager implements OutputManager {
         organization: org
       } as WatermarkDynamicInfo;
     }
+    let alt = infoValues.altitude;
+    let dir = infoValues.direction;
+    let lon = infoValues.longitude;
+    let lat = infoValues.latitude;
+    let attempts = 0;
+    while (attempts < 10) {
+      const snap = GeoDataService.getInstance().getSnapshot();
+      const altOk = snap.altitude.display && !this.isPlaceholder(snap.altitude.display);
+      const dirOk = snap.direction.display && !this.isPlaceholder(snap.direction.display);
+      const lonOk = snap.longitude.display && !this.isPlaceholder(snap.longitude.display);
+      const latOk = snap.latitude.display && !this.isPlaceholder(snap.latitude.display);
+      if (altOk || dirOk || lonOk || latOk) {
+        alt = altOk ? snap.altitude.display : alt;
+        dir = dirOk ? snap.direction.display : dir;
+        lon = lonOk ? snap.longitude.display : lon;
+        lat = latOk ? snap.latitude.display : lat;
+        break;
+      }
+      await new Promise<void>(resolve => setTimeout(resolve, 50));
+      attempts = attempts + 1;
+    }
+    if (this.location) {
+      if (this.location.altitude !== undefined && this.location.altitude !== null && this.isPlaceholder(alt)) {
+        alt = `${Math.round(this.location.altitude)}m`;
+      }
+      if (this.isPlaceholder(lon)) {
+        const hemiE = (this.location.longitude >= 0) ? 'E' : 'W';
+        const absLon = Math.abs(this.location.longitude).toFixed(6);
+        lon = `${absLon}°${hemiE}`;
+      }
+      if (this.isPlaceholder(lat)) {
+        const hemiN = (this.location.latitude >= 0) ? 'N' : 'S';
+        const absLat = Math.abs(this.location.latitude).toFixed(6);
+        lat = `${absLat}°${hemiN}`;
+      }
+    }
+    this.cachedInfoValues = {
+      weather: infoValues.weather,
+      location: infoValues.location,
+      altitude: alt,
+      direction: dir,
+      longitude: lon,
+      latitude: lat,
+      organization: org
+    } as WatermarkDynamicInfo;
     return {
       timestamp,
       weather: infoValues.weather,
       location: infoValues.location,
-      altitude: infoValues.altitude,
-      direction: infoValues.direction,
-      longitude: infoValues.longitude,
-      latitude: infoValues.latitude,
+      altitude: alt,
+      direction: dir,
+      longitude: lon,
+      latitude: lat,
       organization: org
     };
   }
@@ -565,18 +641,74 @@ export class PhotoManager implements OutputManager {
    * 获取天气信息
    */
   private async getWeatherInfo(): Promise<string> {
-    // 实际实现中应该调用天气API
-    return '晴朗';
+    if (this.cachedInfoValues && this.cachedInfoExpiresAt > Date.now() && this.cachedInfoValues.weather) {
+      if (this.debugWatermark) {
+        Logger.info(TAG_LOG, `getWeather branch=cache value='${this.cachedInfoValues.weather}'`);
+      }
+      return this.cachedInfoValues.weather;
+    }
+    try {
+      if (this.externalLocWeaProvider) {
+        await this.refreshLocationWeatherFromProvider();
+        if (this.cachedInfoValues && this.cachedInfoValues.weather) {
+          return this.cachedInfoValues.weather;
+        }
+      }
+    } catch (_) {}
+    if (this.debugWatermark) {
+      Logger.info(TAG_LOG, 'getWeather branch=fallback value=获取失败');
+    }
+    return '获取失败';
   }
 
   /**
    * 获取位置信息
    */
   private async getLocationInfo(): Promise<string> {
-    if (this.location) {
-      return `${this.location.latitude?.toFixed(6)}, ${this.location.longitude?.toFixed(6)}`;
+    if (this.cachedInfoValues && this.cachedInfoExpiresAt > Date.now() && this.cachedInfoValues.location) {
+      if (this.debugWatermark) {
+        Logger.info(TAG_LOG, `getLocation branch=cache value='${this.cachedInfoValues.location}'`);
+      }
+      return this.cachedInfoValues.location;
     }
-    return '定位中...';
+    try {
+      if (this.externalLocWeaProvider) {
+        await this.refreshLocationWeatherFromProvider();
+        if (this.cachedInfoValues && this.cachedInfoValues.location) {
+          return this.cachedInfoValues.location;
+        }
+      }
+    } catch (_) {}
+    if (this.debugWatermark) {
+      Logger.info(TAG_LOG, 'getLocation branch=fallback value=获取失败');
+    }
+    return '获取失败';
+  }
+
+  private async refreshLocationWeatherFromProvider(): Promise<void> {
+    try {
+      const res = await this.externalLocWeaProvider!();
+      const weather = res?.weather || '获取失败';
+      const location = res?.location || '获取失败';
+      const next: WatermarkDynamicInfo = {
+        weather,
+        location,
+        altitude: this.cachedInfoValues?.altitude || '获取中',
+        direction: this.cachedInfoValues?.direction || '获取中',
+        longitude: this.cachedInfoValues?.longitude || '获取中',
+        latitude: this.cachedInfoValues?.latitude || '获取中',
+        organization: this.cachedInfoValues?.organization || (OrganizationService.getInstance().getOrganization() || '')
+      };
+      this.cachedInfoValues = next;
+      this.cachedInfoExpiresAt = Date.now() + this.watermarkInfoCacheTTL;
+      if (this.debugWatermark) {
+        Logger.info(TAG_LOG, `provider refresh weather='${weather}' location='${location}' ttl=${this.watermarkInfoCacheTTL}`);
+      }
+    } catch (e) {
+      if (this.debugWatermark) {
+        Logger.warn(TAG_LOG, `provider refresh failed: ${String(e)}`);
+      }
+    }
   }
 
   /**
@@ -1000,6 +1132,9 @@ export class PhotoManager implements OutputManager {
       const watermarkWidth = Math.round(photoWidth * this.WATERMARK_WIDTH_RATIO / pixelRatio);
       const watermarkHeight = Math.round(photoHeight * this.WATERMARK_HEIGHT_RATIO / pixelRatio);
       this.debugLog(`创建水印画布: photo=${photoWidth}x${photoHeight}, ratio=${pixelRatio}, wm=${watermarkWidth}x${watermarkHeight}, org='${watermarkInfo.organization || ''}'`);
+      if (this.debugWatermark) {
+        Logger.info(TAG_LOG, `draw wmInfo{ts='${watermarkInfo.timestamp}',weather='${watermarkInfo.weather || ''}',location='${watermarkInfo.location || ''}',alt='${watermarkInfo.altitude || ''}',dir='${watermarkInfo.direction || ''}',lon='${watermarkInfo.longitude || ''}',lat='${watermarkInfo.latitude || ''}',org='${watermarkInfo.organization || ''}'}`);
+      }
       const offscreenCanvas = new OffscreenCanvas(watermarkWidth, watermarkHeight);
       const context2d = offscreenCanvas.getContext('2d');
       
@@ -1211,7 +1346,7 @@ export class PhotoManager implements OutputManager {
         }
         i = i + 1;
       }
-      const labelX = MARGIN;
+      const labelX = DOUBLE_MARGIN;
       metrics.valueX = labelX + metrics.maxLabelWidth + MARGIN;
       metrics.valueMaxWidth = canvasWidth - metrics.valueX - MARGIN;
 
@@ -1256,7 +1391,7 @@ export class PhotoManager implements OutputManager {
   private getWatermarkInfoItems(watermarkInfo: WatermarkInfo): Array<WatermarkInfoItem> {
     return [
       { label: '拍摄时间', value: watermarkInfo.timestamp },
-      { label: '天气信息', value: watermarkInfo.weather || '获取中...' },
+      { label: '天        气', value: watermarkInfo.weather || '获取中...' },
       { label: '地        点', value: watermarkInfo.location || '定位中...' },
       { label: '海        拔', value: watermarkInfo.altitude || '计算中...' },
       { label: '方  位  角', value: watermarkInfo.direction || '计算中...' },
@@ -1275,8 +1410,8 @@ export class PhotoManager implements OutputManager {
       const watermarkHeight = wmInfo.size.height;
 
       // 左下角坐标（X贴左边缘，Y贴底部边缘）
-      const watermarkX = 0;
-      const watermarkY = Math.max(targetHeight - watermarkHeight, 0);
+      const watermarkX = 8;
+      const watermarkY = Math.max(targetHeight - watermarkHeight-7, 0);
 
       await this.blendWatermark(originalPixelMap, watermarkPixelMap, watermarkX, watermarkY);
       return originalPixelMap;
@@ -1455,5 +1590,11 @@ export class PhotoManager implements OutputManager {
     if (this.DEBUG_WATERMARK_LOGS) {
       Logger.debug(TAG_LOG, msg);
     }
+  }
+
+  private isPlaceholder(text: string): boolean {
+    const t = String(text || '');
+    if (t.length === 0) return true;
+    return t.indexOf('获取') >= 0 || t.indexOf('计算') >= 0 || t.indexOf('定位') >= 0;
   }
 }

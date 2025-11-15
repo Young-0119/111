@@ -16,8 +16,12 @@
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Logger } from 'commons';
 import { OrganizationService } from 'camera';
+import AmapService from 'camera/src/main/ets/dataservices/AmapService';
+import { GeoDataService } from 'camera';
 import { WatermarkInfo } from '../types/DataInterfaces';
 import { PhotoManager } from 'camera';
+import PermissionManager from '../utils/PermissionManager';
+import { Permissions } from '@kit.AbilityKit';
 
 @Component
 export struct WatermarkOverlay {
@@ -29,6 +33,7 @@ export struct WatermarkOverlay {
   @State showEditDialog: boolean = false;
   @State editingOrganization: string = '';
   private orgListener?: (org: string) => void;
+  private geoListenerId?: number;
   
   aboutToAppear() {
     // 初始化组织服务并加载当前值
@@ -40,7 +45,35 @@ export struct WatermarkOverlay {
       this.watermarkInfo.organization = org;
     };
     OrganizationService.getInstance().addListener(this.orgListener);
+    this.photoManager?.setLocationWeatherProvider(() => AmapService.fetchLocationAndWeatherAuto());
+    this.photoManager?.setDebugWatermark(true);
     this.updateTimestamp();
+    const perms: Permissions[] = ['ohos.permission.LOCATION', 'ohos.permission.APPROXIMATELY_LOCATION'];
+    PermissionManager.request(perms, getContext(this))
+      .then(() => {
+        this.loadLocationAndWeather();
+        return GeoDataService.getInstance().start(getContext(this));
+      })
+      .then(() => {
+        const snap = GeoDataService.getInstance().getSnapshot();
+        this.watermarkInfo.altitude = snap.altitude.display;
+        this.watermarkInfo.direction = snap.direction.display;
+        this.watermarkInfo.longitude = snap.longitude.display;
+        this.watermarkInfo.latitude = snap.latitude.display;
+        this.geoListenerId = GeoDataService.getInstance().onUpdate(snap => {
+          this.watermarkInfo.altitude = snap.altitude.display;
+          this.watermarkInfo.direction = snap.direction.display;
+          this.watermarkInfo.longitude = snap.longitude.display;
+          this.watermarkInfo.latitude = snap.latitude.display;
+        });
+      })
+      .catch(() => {
+        this.loadLocationAndWeather();
+        this.watermarkInfo.altitude = '获取失败';
+        this.watermarkInfo.direction = '获取失败';
+        this.watermarkInfo.longitude = '获取失败';
+        this.watermarkInfo.latitude = '获取失败';
+      });
   }
   
   aboutToDisappear() {
@@ -48,6 +81,10 @@ export struct WatermarkOverlay {
     if (this.orgListener) {
       OrganizationService.getInstance().removeListener(this.orgListener);
       this.orgListener = undefined;
+    }
+    if (this.geoListenerId) {
+      GeoDataService.getInstance().removeListener(this.geoListenerId);
+      this.geoListenerId = undefined;
     }
   }
   
@@ -59,8 +96,9 @@ export struct WatermarkOverlay {
     const day = String(now.getDate()).padStart(2, '0');
     const hours = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+    const weekday = weekdays[now.getDay()];
+    return `${year}.${month}.${day} ${weekday} ${hours}:${minutes}`;
   }
   
   private updateTimestamp() {
@@ -168,6 +206,20 @@ export struct WatermarkOverlay {
     return this.previewHeight > 0 ? Math.floor(this.previewHeight * 0.4) : 480;
   }
 
+  private async loadLocationAndWeather() {
+    try {
+      this.watermarkInfo.location = '获取中';
+      this.watermarkInfo.weather = '获取中';
+      const result = await AmapService.fetchLocationAndWeatherAuto();
+      this.watermarkInfo.location = result.location || '获取失败';
+      this.watermarkInfo.weather = result.weather || '获取失败';
+      this.photoManager?.refreshWatermarkCachesImmediately();
+    } catch (_) {
+      this.watermarkInfo.location = '获取失败';
+      this.watermarkInfo.weather = '获取失败';
+    }
+  }
+
   build() {
     // 使用Stack容器实现绝对定位，避免全屏覆盖
     Stack() {
@@ -197,7 +249,7 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.watermarkInfo.timestamp)
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#000000')
           .margin({ left: 3, bottom: 3 })
 
@@ -205,9 +257,9 @@ export struct WatermarkOverlay {
         Text() {
           Span($r('app.string.watermark_weather'))
           Span('：')
-          Span(this.watermarkInfo.weather || '获取中...')
+          Span(this.watermarkInfo.weather || '获取中')
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#000000')
           .margin({ left: 3, bottom: 3 })
 
@@ -215,9 +267,9 @@ export struct WatermarkOverlay {
         Text() {
           Span($r('app.string.watermark_location'))
           Span('：')
-          Span(this.watermarkInfo.location || '定位中...')
+          Span(this.watermarkInfo.location || '获取中')
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#000000')
           .margin({ left: 3, bottom: 3 })
 
@@ -225,9 +277,9 @@ export struct WatermarkOverlay {
         Text() {
           Span($r('app.string.watermark_altitude'))
           Span('：')
-          Span(this.watermarkInfo.altitude || '计算中...')
+          Span(this.watermarkInfo.altitude || '获取中')
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#000000')
           .margin({ left: 3, bottom: 3 })
 
@@ -235,9 +287,9 @@ export struct WatermarkOverlay {
         Text() {
           Span($r('app.string.watermark_direction'))
           Span('：')
-          Span(this.watermarkInfo.direction || '计算中...')
+          Span(this.watermarkInfo.direction || '获取中')
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#000000')
           .margin({ left: 3, bottom: 3 })
 
@@ -245,9 +297,9 @@ export struct WatermarkOverlay {
         Text() {
           Span($r('app.string.watermark_longitude'))
           Span('：')
-          Span(this.watermarkInfo.longitude || '计算中...')
+          Span(this.watermarkInfo.longitude || '获取中')
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#000000')
           .margin({ left: 3, bottom: 3 })
 
@@ -255,9 +307,9 @@ export struct WatermarkOverlay {
         Text() {
           Span($r('app.string.watermark_latitude'))
           Span('：')
-          Span(this.watermarkInfo.latitude || '获取中...')
+          Span(this.watermarkInfo.latitude || '获取中')
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#000000')
           .margin({ left: 3, bottom: 3 })
           
@@ -268,7 +320,7 @@ export struct WatermarkOverlay {
           Span('：')
           Span(this.currentOrganization || this.watermarkInfo.organization || '双击编辑')
         }
-          .fontSize(10)
+          .fontSize(9)
           .fontColor('#FFFFFF')
           .fontWeight(FontWeight.Medium)
           .backgroundColor('rgba(0, 87, 217, 0.5)')

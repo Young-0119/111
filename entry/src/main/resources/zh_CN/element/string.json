@@ -122,6 +122,10 @@
     }
     ,
     {
+      "name": "permission_NETWORK",
+      "value": "用于网络访问"
+    },
+    {
       "name": "save_mode_watermark_only",
       "value": "仅保留水印版"
     },
@@ -131,7 +135,7 @@
     },
     {
       "name": "save_mode_current_watermark_only",
-      "value": "保存：水印"
+      "value": "印"
     },
     {
       "name": "save_mode_current_keep_both",

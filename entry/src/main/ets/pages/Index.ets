@@ -39,6 +39,7 @@ import { WatermarkOverlay } from '../views/WatermarkOverlay';
 import { WatermarkInfo } from '../types/DataInterfaces';
 import PreviewViewModel from '../viewmodels/PreviewViewModel';
 import { Logger } from 'commons';
+import AmapService from 'camera/src/main/ets/dataservices/AmapService';
 
 @Extend(SymbolGlyph)
 function funcButtonStyle() {
@@ -112,6 +113,8 @@ struct Index {
     this.initSleepTimer();
     this.registerApplicationStateChange();
     this.addOrientationChangeEventListener();
+    this.photoManager.setLocationWeatherProvider(() => AmapService.fetchLocationAndWeatherAuto());
+    await this.photoManager.prewarmWatermarkCaches();
     try {
       display.on('foldStatusChange', () => {
         this.onFoldStatusChange()

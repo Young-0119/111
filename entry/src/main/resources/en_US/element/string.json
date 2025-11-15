@@ -119,6 +119,10 @@
     {
       "name": "permission_LOCATION",
       "value": "For location"
+    },
+    {
+      "name": "permission_NETWORK",
+      "value": "For network access"
     }
   ]
 }

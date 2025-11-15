@@ -16,6 +16,8 @@ import preferences from '@ohos.data.preferences';
 import { common } from '@kit.AbilityKit';
 import geoLocationManager from '@ohos.geoLocationManager';
 import { LocationInfo, SatelliteParams } from '../types/DataInterfaces';
+import GeoDataService from 'camera/src/main/ets/dataservices/GeoDataService';
+import { SatelliteCalculator } from 'camera/src/main/ets/dataservices/SatelliteCalculator';
 
 // 统一从 types 引入接口定义，避免重复声明
 
@@ -40,6 +42,10 @@ export struct IndexContent {
   @State showPrivacyDialog: boolean = false; // 显示隐私政策弹窗
   @State selectedSatellite: string = 'APSTAR'; // 当前选择的卫星类型
   @State satelliteName: string = '亚太6C/6D'; // 当前卫星名称
+  private geoListenerId?: number;
+  private lastAnglesAt: number = 0;
+  private lastAnglesLon: number = 0;
+  private lastAnglesLat: number = 0;
 
 
   
@@ -154,6 +160,7 @@ export struct IndexContent {
     this.initLocationService();
     // 仅在可见时申请隐私与订阅传感器
     if (this.isActive) {
+      this.startGeoAndBind();
       this.checkPrivacyAgreement();
       this.startSensors();
     }
@@ -167,6 +174,7 @@ export struct IndexContent {
   onActiveChanged(newVal: boolean) {
     if (newVal) {
       // 页面变为可见：申请隐私并订阅传感器
+      this.startGeoAndBind();
       this.checkPrivacyAgreement();
       this.startSensors();
     } else {
@@ -176,20 +184,6 @@ export struct IndexContent {
   }
 
   private startSensors() {
-    // 订阅方向传感器
-    try {
-      sensor.on(sensor.SensorId.ORIENTATION, (data: sensor.OrientationResponse) => {
-        this.azimuth = data.alpha || 0;
-        // 修正俯仰角正负号：设备向上倾斜为正值，向下倾斜为负值
-        this.pitch = -(data.beta || 0);
-        this.roll = data.gamma || 0;
-        this.deviceAzimuth = this.azimuth;
-        // 更新方向信息
-        this.updateDirectionInfo(this.azimuth);
-      }, { interval: 100000000 });
-    } catch (error) {
-      console.error('方向传感器订阅失败', error);
-    }
     // 订阅气压传感器
     try {
       sensor.on(sensor.SensorId.BAROMETER, (data: sensor.BarometerResponse) => {
@@ -211,7 +205,6 @@ export struct IndexContent {
 
   private stopSensors() {
     try {
-      sensor.off(sensor.SensorId.ORIENTATION);
       sensor.off(sensor.SensorId.BAROMETER);
       sensor.off(sensor.SensorId.MAGNETIC_FIELD);
     } catch (error) {
@@ -239,6 +232,7 @@ export struct IndexContent {
        directionLat: latitude >= 0 ? '北纬' : '南纬',
        valueLat: (latitude >= 0 ? latitude : -latitude).toFixed(10)
      } as LocationInfo;
+     this.maybeUpdateAngles();
   }
 
 
@@ -260,7 +254,7 @@ export struct IndexContent {
       if (locationPermission === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED ||
           approximateLocationPermission === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
         console.info('位置权限已授予');
-        this.getCurrentLocation();
+        this.startGeoAndBind();
         return true;
       }
       
@@ -279,18 +273,99 @@ export struct IndexContent {
       
       if (hasLocationPermission) {
         console.info('位置权限请求成功');
-        this.getCurrentLocation();
+        this.startGeoAndBind();
         return true;
       } else {
         console.warn('位置权限被拒绝');
-        this.getCurrentLocation(); // 即使权限被拒绝也尝试获取位置
+        this.startGeoAndBind(); // 即使权限被拒绝也尝试启动并读取快照
         return false;
       }
     } catch (error) {
       console.error('权限请求失败', error);
-      this.getCurrentLocation(); // 即使权限请求失败也尝试获取位置
+      this.startGeoAndBind(); // 即使权限请求失败也尝试启动并读取快照
       return false;
     }
+  }
+
+  private startGeoAndBind(): void {
+    try {
+      GeoDataService.getInstance().start(getContext(this))
+        .then(() => {
+          const snap = GeoDataService.getInstance().getSnapshot();
+          if (typeof snap.direction.degrees === 'number') {
+            const base = snap.direction.degrees as number;
+            const degPortrait = ((base - 90) % 360 + 360) % 360;
+            this.updateDirectionInfo(degPortrait);
+            this.deviceAzimuth = degPortrait;
+            this.azimuth = degPortrait;
+          }
+          if (typeof snap.longitude.degrees === 'number' && typeof snap.latitude.degrees === 'number') {
+            this.longitude = snap.longitude.degrees as number;
+            this.latitude = snap.latitude.degrees as number;
+            this.updateLocationFormat(this.longitude, this.latitude);
+          }
+          if (typeof snap.altitude.meters === 'number') {
+            this.altitude = snap.altitude.meters as number;
+          }
+          if (typeof snap.orientationBeta === 'number') {
+            this.pitch = -(snap.orientationBeta as number);
+          }
+          if (typeof snap.orientationGamma === 'number') {
+            this.roll = snap.orientationGamma as number;
+          }
+          this.locationStatus = '位置获取成功';
+          this.isLocationEnabled = true;
+          if (this.geoListenerId) {
+            GeoDataService.getInstance().removeListener(this.geoListenerId);
+            this.geoListenerId = undefined;
+          }
+          this.geoListenerId = GeoDataService.getInstance().onUpdate(ns => {
+            const base = typeof ns.direction.degrees === 'number' ? ns.direction.degrees as number : this.deviceAzimuth;
+            const degPortrait = ((base - 90) % 360 + 360) % 360;
+            this.updateDirectionInfo(degPortrait);
+            this.deviceAzimuth = degPortrait;
+            this.azimuth = degPortrait;
+          const glon = typeof ns.longitude.degrees === 'number' ? ns.longitude.degrees as number : this.longitude;
+          const glat = typeof ns.latitude.degrees === 'number' ? ns.latitude.degrees as number : this.latitude;
+          this.longitude = glon;
+          this.latitude = glat;
+          this.updateLocationFormat(this.longitude, this.latitude);
+            const gAlt = typeof ns.altitude.meters === 'number' ? ns.altitude.meters as number : this.altitude;
+            this.altitude = gAlt;
+            if (typeof ns.orientationBeta === 'number') {
+              this.pitch = -(ns.orientationBeta as number);
+            }
+            if (typeof ns.orientationGamma === 'number') {
+              this.roll = ns.orientationGamma as number;
+            }
+            this.locationStatus = '位置获取成功';
+            this.isLocationEnabled = true;
+          });
+        })
+        .catch(() => {
+          this.locationStatus = '正在获取位置...';
+        });
+    } catch (_) {
+      this.locationStatus = '正在获取位置...';
+    }
+  }
+
+  private maybeUpdateAngles(): void {
+    const now = Date.now();
+    const dl = Math.abs(this.longitude - this.lastAnglesLon);
+    const dB = Math.abs(this.latitude - this.lastAnglesLat);
+    if (dl < 1e-6 && dB < 1e-6 && now - this.lastAnglesAt < 500) {
+      return;
+    }
+    const satParams = this.getSatelliteParams();
+    const res = SatelliteCalculator.getInstance().calculateAllAnglesWithSatellite(this.longitude, this.latitude, satParams.longitude);
+    this.targetAzimuth = res.azimuth;
+    this.targetElevation = res.elevation;
+    this.polarizationAngle = res.polarization;
+    this.satelliteName = satParams.name;
+    this.lastAnglesLon = this.longitude;
+    this.lastAnglesLat = this.latitude;
+    this.lastAnglesAt = now;
   }
 
   /**
@@ -407,54 +482,6 @@ export struct IndexContent {
   }
 
   /**
-   * 本地计算：指定卫星的方位角
-   */
-  private calcAzimuthWithSatellite(userLon: number, userLat: number, satLon: number): number {
-    const userLongRad = this.degToRad(userLon);
-    const userLatRad = this.degToRad(userLat);
-    const satLongRad = this.degToRad(satLon);
-    const longDiff = satLongRad - userLongRad;
-    let azimuth = Math.atan2(Math.sin(longDiff), Math.cos(userLatRad) * Math.tan(0) - Math.sin(userLatRad) * Math.cos(longDiff));
-    azimuth = this.radToDeg(azimuth);
-    if (azimuth < 0) {
-      azimuth += 360;
-    }
-    return azimuth;
-  }
-
-  /**
-   * 本地计算：指定卫星的俯仰角
-   */
-  private calcElevationWithSatellite(userLon: number, userLat: number, satLon: number): number {
-    const userLongRad = this.degToRad(userLon);
-    const userLatRad = this.degToRad(userLat);
-    const satLongRad = this.degToRad(satLon);
-    const longDiff = satLongRad - userLongRad;
-    const earthRadius = 6378.0;
-    const geoHeight = 35786.0;
-    const r = (earthRadius + geoHeight) / earthRadius;
-    let elevation = Math.atan2(r * Math.sin(userLatRad) - 1, r * Math.cos(userLatRad) * Math.cos(longDiff));
-    elevation = this.radToDeg(elevation);
-    return elevation;
-  }
-
-  /**
-   * 本地计算：指定卫星的极化角
-   */
-  private calcPolarizationWithSatellite(userLon: number, userLat: number, satLon: number): number {
-    const userLongRad = this.degToRad(userLon);
-    const userLatRad = this.degToRad(userLat);
-    const satLongRad = this.degToRad(satLon);
-    const longDiff = satLongRad - userLongRad;
-    let polarization = Math.atan(Math.tan(longDiff) / Math.sin(userLatRad));
-    polarization = this.radToDeg(polarization);
-    if (userLat < 0) {
-      polarization = 180 - polarization;
-    }
-    return polarization;
-  }
-
-  /**
    * 本地计算：基于气压估算海拔（米）
    */
   private calculateAltitudeFromPressure(pressure: number | null | undefined): number | null {
@@ -485,21 +512,7 @@ export struct IndexContent {
    * 计算卫星角度
    */
   async calculateSatelliteAngles() {
-    const satParams = this.getSatelliteParams();
-    const satLon = satParams.longitude;
-    this.satelliteName = satParams.name; // 更新卫星名称 
-    
-    try {
-      if (this.latitude !== 0 || this.longitude !== 0) {
-        this.targetAzimuth = this.calcAzimuthWithSatellite(this.longitude, this.latitude, satLon);
-        this.targetElevation = this.calcElevationWithSatellite(this.longitude, this.latitude, satLon);
-        this.polarizationAngle = this.calcPolarizationWithSatellite(this.longitude, this.latitude, satLon);
-      }
-    } catch (error) {
-      console.error('计算卫星角度失败:', error);
-    }
-    
-    // 海拔计算（基于气压，本地实现）
+    this.maybeUpdateAngles();
     const calculatedAltitude: number | null = this.calculateAltitudeFromPressure(this.pressure);
     if (calculatedAltitude !== null) {
       this.altitude = calculatedAltitude;

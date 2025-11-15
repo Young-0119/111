@@ -18,6 +18,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import WindowUtil from '../utils/WindowUtil';
 import { getSelfAppId } from '../utils/CommonUtil';
+import AmapService from 'camera/src/main/ets/dataservices/AmapService';
 
 const DOMAIN = 0x0000;
 
@@ -26,6 +27,8 @@ export default class EntryAbility extends UIAbility {
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
       hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+      AmapService.setKey('7feb831b7c303f0b46f01840ee78e4de');
+      AmapService.setDebug(true);
       getSelfAppId()
         .then((appId: string) => {
           hilog.info(DOMAIN, 'appId', 'appId=%{public}s', appId);

@@ -81,7 +81,7 @@
           "abilities": [
             "EntryAbility"
           ]
-        },
+        }
       },
       {
         "name": "ohos.permission.LOCATION",
@@ -95,6 +95,15 @@
       {
         "name": "ohos.permission.APPROXIMATELY_LOCATION",
         "reason": "$string:permission_LOCATION",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
+        "name": "ohos.permission.INTERNET",
+        "reason": "$string:permission_NETWORK",
         "usedScene": {
           "abilities": [
             "EntryAbility"

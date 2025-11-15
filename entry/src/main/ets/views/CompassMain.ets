@@ -289,40 +289,21 @@ export struct CompassMain {
     
     ctx.save();
     ctx.translate(arrowX, arrowY);
-    // 旋转使箭头指向圆心方向并额外旋转180度
     ctx.rotate(angle + Math.PI * 2.5);
-    
-    // 绘制三角形箭头
-    ctx.beginPath();
-    ctx.moveTo(0, -arrowSize * 1.5); // 箭头尖端
-    ctx.lineTo(-arrowSize, arrowSize * 0.5); // 左侧点
-    ctx.lineTo(arrowSize, arrowSize * 0.5); // 右侧点
-    ctx.closePath();
-    
-    // 判断箭头是否对准固定垂直线段
     const directionDiff = (this.targetAzimuth - this.deviceDirection + 360) % 360;
     const tolerance = 5;
-    
-    if (directionDiff <= tolerance || directionDiff >= (360 - tolerance)) {
-      // 箭头对准固定垂直线段，使用绿色
-      ctx.fillStyle = '#00FF00';
-    } else {
-      // 箭头未对准固定垂直线段，使用红色
-      ctx.fillStyle = '#FF3B30';
-    }
-    
-    ctx.fill();
-    
-    // 在箭头右侧绘制卫星名称文字
+    ctx.font = '60px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🛰', 0, 0);
     ctx.save();
-    ctx.rotate(Math.PI/2); // 旋转90度，使文字沿圆周方向
+    ctx.rotate(Math.PI/2);
     ctx.font = '40px Arial';
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(this.satelliteName, arrowSize * 1.5, 0); // 在箭头后侧绘制文字，增加距离
+    ctx.fillText(this.satelliteName, arrowSize * 1.5, 0);
     ctx.restore();
-    
     ctx.restore();
   }
 

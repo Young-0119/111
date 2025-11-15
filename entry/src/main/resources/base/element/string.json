@@ -122,6 +122,10 @@
     }
     ,
     {
+      "name": "permission_NETWORK",
+      "value": "For network access"
+    },
+    {
       "name": "save_mode_watermark_only",
       "value": "Watermark only"
     },
