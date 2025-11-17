@@ -255,7 +255,11 @@ export class GeoDataService {
         this.notify()
       }, 10) as number
     }
-    sensor.on(sensor.SensorId.ORIENTATION, this.orientationCb, { interval: 100000000 })
+    try {
+      sensor.on(sensor.SensorId.ORIENTATION, this.orientationCb, { interval: 100000000 })
+    } catch (_) {
+      this.orientationCb && this.orientationCb({ alpha: 0, beta: 0, gamma: 0 } as sensor.OrientationResponse)
+    }
     this.orientationSubscribed = true
   }
 
@@ -272,7 +276,11 @@ export class GeoDataService {
         }
       }
     }
-    sensor.on(sensor.SensorId.BAROMETER, this.barometerCb)
+    try {
+      sensor.on(sensor.SensorId.BAROMETER, this.barometerCb)
+    } catch (_) {
+      this.barometerCb && this.barometerCb({ pressure: 0 } as sensor.BarometerResponse)
+    }
     this.barometerSubscribed = true
   }
 

@@ -21,23 +21,24 @@ import { GeoDataService } from 'camera';
 import { WatermarkInfo } from '../types/DataInterfaces';
 import { PhotoManager } from 'camera';
 import PermissionManager from '../utils/PermissionManager';
-import { Permissions } from '@kit.AbilityKit';
+import { Permissions, common } from '@kit.AbilityKit';
 
 @Component
 export struct WatermarkOverlay {
   @ObjectLink watermarkInfo: WatermarkInfo;
   @Prop previewWidth: number = 0;  // 预览区域宽度
   @Prop previewHeight: number = 0; // 预览区域高度
-  @Prop photoManager?: PhotoManager;
+  @Prop photoManager: PhotoManager | undefined;
   @State currentOrganization: string = '';
   @State showEditDialog: boolean = false;
   @State editingOrganization: string = '';
   private orgListener?: (org: string) => void;
   private geoListenerId?: number;
+  private tsTimerId?: number;
   
   aboutToAppear() {
     // 初始化组织服务并加载当前值
-    OrganizationService.getInstance().initialize(getContext(this));
+    OrganizationService.getInstance().initialize(AppStorage.get('abilityCtx') as common.UIAbilityContext);
     this.loadOrganization();
     // 订阅制作单位变更事件，保持视图层与服务内存态一致
     this.orgListener = (org: string) => {
@@ -46,13 +47,12 @@ export struct WatermarkOverlay {
     };
     OrganizationService.getInstance().addListener(this.orgListener);
     this.photoManager?.setLocationWeatherProvider(() => AmapService.fetchLocationAndWeatherAuto());
-    this.photoManager?.setDebugWatermark(true);
     this.updateTimestamp();
     const perms: Permissions[] = ['ohos.permission.LOCATION', 'ohos.permission.APPROXIMATELY_LOCATION'];
-    PermissionManager.request(perms, getContext(this))
+    PermissionManager.request(perms, AppStorage.get('abilityCtx') as common.UIAbilityContext)
       .then(() => {
         this.loadLocationAndWeather();
-        return GeoDataService.getInstance().start(getContext(this));
+        return GeoDataService.getInstance().start(AppStorage.get('abilityCtx') as common.UIAbilityContext);
       })
       .then(() => {
         const snap = GeoDataService.getInstance().getSnapshot();
@@ -86,6 +86,10 @@ export struct WatermarkOverlay {
       GeoDataService.getInstance().removeListener(this.geoListenerId);
       this.geoListenerId = undefined;
     }
+    if (this.tsTimerId) {
+      try { clearInterval(this.tsTimerId); } catch (_) {}
+      this.tsTimerId = undefined;
+    }
   }
   
   
@@ -102,10 +106,9 @@ export struct WatermarkOverlay {
   }
   
   private updateTimestamp() {
-    // 每秒更新时间戳
-    setInterval(() => {
+    this.tsTimerId = setInterval(() => {
       this.watermarkInfo.timestamp = this.getCurrentTimestamp();
-    }, 1000);
+    }, 1000) as number;
   }
   
   private loadOrganization() {
@@ -120,7 +123,7 @@ export struct WatermarkOverlay {
   
   private async saveOrganization(newOrg: string) {
     try {
-      await OrganizationService.getInstance().setOrganization(newOrg, getContext(this));
+      await OrganizationService.getInstance().setOrganization(newOrg, AppStorage.get('abilityCtx') as common.UIAbilityContext);
       this.currentOrganization = newOrg;
       this.watermarkInfo.organization = newOrg;
     } catch (err) {
@@ -213,7 +216,6 @@ export struct WatermarkOverlay {
       const result = await AmapService.fetchLocationAndWeatherAuto();
       this.watermarkInfo.location = result.location || '获取失败';
       this.watermarkInfo.weather = result.weather || '获取失败';
-      this.photoManager?.refreshWatermarkCachesImmediately();
     } catch (_) {
       this.watermarkInfo.location = '获取失败';
       this.watermarkInfo.weather = '获取失败';

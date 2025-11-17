@@ -112,6 +112,8 @@ struct Index {
     this.addGravityEventListener();
     this.initSleepTimer();
     this.registerApplicationStateChange();
+    try { await AmapService.initialize(this.applicationContext) } catch (_) {}
+    try { AmapService.setDebug(false) } catch (_) {}
     this.addOrientationChangeEventListener();
     this.photoManager.setLocationWeatherProvider(() => AmapService.fetchLocationAndWeatherAuto());
     await this.photoManager.prewarmWatermarkCaches();

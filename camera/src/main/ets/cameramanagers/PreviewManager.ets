@@ -72,7 +72,7 @@ export class PreviewManager implements OutputManager {
         Logger.error(TAG_LOG, `FrameStart callback Error, errorMessage: ${err.message}`);
         return;
       }
-      Logger.info(TAG_LOG, 'Preview frame started');
+      Logger.debug(TAG_LOG, 'Preview frame started');
       this.onPreviewStart();
     });
   }
@@ -83,7 +83,7 @@ export class PreviewManager implements OutputManager {
         Logger.error(TAG_LOG, `FrameStart callback Error, errorMessage: ${err.message}`);
         return;
       }
-      Logger.info(TAG_LOG, 'Preview frame end');
+      Logger.debug(TAG_LOG, 'Preview frame end');
     });
   }
 

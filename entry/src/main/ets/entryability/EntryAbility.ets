@@ -25,6 +25,7 @@ const DOMAIN = 0x0000;
 export default class EntryAbility extends UIAbility {
   onCreate(): void {
     try {
+      AppStorage.setOrCreate('abilityCtx', this.context);
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
       hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
       AmapService.setKey('7feb831b7c303f0b46f01840ee78e4de');

@@ -1,5 +1,8 @@
 import http from '@ohos.net.http';
 import geoLocationManager from '@ohos.geoLocationManager';
+import { preferences } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
+import { AMAP_DEFAULT_KEY } from './AmapKey';
 import { Logger } from 'commons';
 
 export interface LocationResult {
@@ -55,9 +58,35 @@ export class AmapService {
   private static locationCache?: Cache<LocationResult>;
   private static weatherCache?: Cache<WeatherResult>;
   private static debug: boolean = false;
+  private static PREF_NAME: string = 'amap_prefs';
+  private static PREF_KEY: string = 'amap_key';
 
-  static setKey(k: string): void {
+  static async initialize(ctx?: common.UIAbilityContext | Context): Promise<void> {
+    try {
+      const contextToUse: Context | undefined = AmapService.resolveContext(ctx);
+      if (!contextToUse) return;
+      const prefs = await preferences.getPreferences(contextToUse, AmapService.PREF_NAME);
+      const val = await prefs.get(AmapService.PREF_KEY, '') as string;
+      AmapService.key = (val || '').trim();
+      if (!AmapService.key && AMAP_DEFAULT_KEY && AMAP_DEFAULT_KEY.length > 0) {
+        await AmapService.setKey(AMAP_DEFAULT_KEY, contextToUse);
+      }
+    } catch (_) {}
+  }
+
+  static async setKey(k: string, ctx?: common.UIAbilityContext | Context): Promise<void> {
     AmapService.key = (k || '').trim();
+    try {
+      const contextToUse: Context | undefined = AmapService.resolveContext(ctx);
+      if (!contextToUse) return;
+      const prefs = await preferences.getPreferences(contextToUse, AmapService.PREF_NAME);
+      await prefs.put(AmapService.PREF_KEY, AmapService.key);
+      await prefs.flush();
+    } catch (_) {}
+  }
+
+  static getKey(): string {
+    return AmapService.key;
   }
 
   static setDebug(enabled: boolean): void {
@@ -206,6 +235,16 @@ export class AmapService {
       const pair: LocationWeatherPair = { location: '获取失败', weather: '获取失败' };
       return pair;
     }
+  }
+
+  private static resolveContext(ctx?: common.UIAbilityContext | Context): Context | undefined {
+    if (!ctx) return undefined;
+    try {
+      if (typeof (ctx as common.UIAbilityContext).getApplicationContext === 'function') {
+        return (ctx as common.UIAbilityContext).getApplicationContext();
+      }
+    } catch (_) {}
+    return ctx as Context;
   }
 }
 

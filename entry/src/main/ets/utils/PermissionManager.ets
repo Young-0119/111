@@ -36,6 +36,8 @@ class PermissionManager {
       }
     } catch (exception) {
       Logger.error(TAG, `request failed, code is ${exception.code}, message is ${exception.message}`);
+      const msg = `permission request failed: ${exception?.code ?? ''} ${exception?.message ?? String(exception)}`;
+      throw new Error(msg);
     }
   }
 }

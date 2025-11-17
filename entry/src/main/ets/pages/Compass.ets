@@ -85,8 +85,8 @@ export struct IndexContent {
    */
   async checkPrivacyAgreement() {
     try {
-      const context = getContext(this);
-      const dataPreferences = await preferences.getPreferences(context, 'privacy_settings');
+      const abilityCtx = AppStorage.get('abilityCtx') as common.UIAbilityContext;
+      const dataPreferences = await preferences.getPreferences(abilityCtx, 'privacy_settings');
       const agreed = await dataPreferences.get('privacy_agreed', false);
       
       if (agreed) {
@@ -115,8 +115,8 @@ export struct IndexContent {
    */
   async handlePrivacyAgree() {
     try {
-      const context = getContext(this);
-      const dataPreferences = await preferences.getPreferences(context, 'privacy_settings');
+      const abilityCtx = AppStorage.get('abilityCtx') as common.UIAbilityContext;
+      const dataPreferences = await preferences.getPreferences(abilityCtx, 'privacy_settings');
       await dataPreferences.put('privacy_agreed', true);
       await dataPreferences.flush();
       
@@ -138,8 +138,8 @@ export struct IndexContent {
    */
   async handlePrivacyDisagree() {
     try {
-      const context = getContext(this);
-      const dataPreferences = await preferences.getPreferences(context, 'privacy_settings');
+      const abilityCtx = AppStorage.get('abilityCtx') as common.UIAbilityContext;
+      const dataPreferences = await preferences.getPreferences(abilityCtx, 'privacy_settings');
       await dataPreferences.put('privacy_agreed', false);
       await dataPreferences.flush();
       
@@ -259,7 +259,8 @@ export struct IndexContent {
       }
       
       // 请求权限
-      const result = await atManager.requestPermissionsFromUser(getContext(this), [
+      const abilityCtx = AppStorage.get('abilityCtx') as common.UIAbilityContext;
+      const result = await atManager.requestPermissionsFromUser(abilityCtx, [
         'ohos.permission.LOCATION',
         'ohos.permission.APPROXIMATELY_LOCATION'
       ]);
@@ -289,7 +290,8 @@ export struct IndexContent {
 
   private startGeoAndBind(): void {
     try {
-      GeoDataService.getInstance().start(getContext(this))
+      const abilityCtx = AppStorage.get('abilityCtx') as common.UIAbilityContext;
+      GeoDataService.getInstance().start(abilityCtx)
         .then(() => {
           const snap = GeoDataService.getInstance().getSnapshot();
           if (typeof snap.direction.degrees === 'number') {
@@ -552,23 +554,6 @@ export struct IndexContent {
         // 中间占位
         Text('')
           .layoutWeight(2)
-        
-        // 右侧帮助按钮
-        Button('帮助')
-          .fontSize(14)
-          .fontColor(Color.White)
-          .backgroundColor('rgba(52, 199, 89, 0.8)')
-          .borderRadius(15)
-          .width(50)
-          .height(30)
-          .layoutWeight(1)
-          .onClick(() => {
-            router.pushUrl({
-              url: 'pages/HelpPage'
-            }).catch(() => {
-              console.error('导航到帮助页面失败');
-            });
-          })
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
