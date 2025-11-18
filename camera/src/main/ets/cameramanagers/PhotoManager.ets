@@ -86,9 +86,7 @@ interface Size2D {
   width: number;
   height: number;
 }
-interface PhotoAssetEvent {
-  uri: string;
-}
+// 使用媒体库的 PhotoAsset 作为分段式拍照的资产回调类型
 
 // ArkTS: 为静态底图布局参数定义显式接口，避免内联对象类型
 interface WatermarkBaseLayout {
@@ -328,14 +326,16 @@ export class PhotoManager implements OutputManager {
   }
 
   private getDisplayInfo(): display.Display {
-    if (!this.displayInfoCached) {
-      try {
-        this.displayInfoCached = display.getDefaultDisplaySync();
-      } catch (_) {
-        this.displayInfoCached = undefined;
-      }
+    if (this.displayInfoCached) {
+      return this.displayInfoCached as display.Display;
     }
-    return (this.displayInfoCached || display.getDefaultDisplaySync()) as display.Display;
+    try {
+      this.displayInfoCached = display.getDefaultDisplaySync();
+      return this.displayInfoCached as display.Display;
+    } catch (e) {
+      Logger.error(TAG_LOG, `getDefaultDisplaySync failed: ${String(e)}`);
+      throw new Error('无法获取显示信息');
+    }
   }
 
   public setWatermarkConfig(next: Partial<WatermarkConfig>): void {
@@ -593,9 +593,9 @@ export class PhotoManager implements OutputManager {
   
 
   // [Start set_photo_cb_asset]
-  // 以已保存资产为入口进行水印处理
+  // 以分段式拍照资产为入口进行水印处理与就地提交
   setPhotoOutputCbAsset(photoOutput: camera.PhotoOutput, context: Context) {
-    photoOutput.on('photoAssetAvailable', async (errCode: BusinessError, asset: PhotoAssetEvent): Promise<void> => {
+    photoOutput.on('photoAssetAvailable', async (errCode: BusinessError, asset: photoAccessHelper.PhotoAsset): Promise<void> => {
       if (errCode || !asset || !asset.uri) {
         Logger.error(TAG_LOG, 'photoAssetAvailable: invalid asset');
         return;
@@ -608,7 +608,7 @@ export class PhotoManager implements OutputManager {
       this.isProcessingPhoto = true;
       try {
         if (this.enableWatermark) {
-          await this.processSavedAssetWithWatermark(context, asset.uri);
+          await this.processDeferredAssetWithWatermark(context, asset);
         } else {
           Logger.info(TAG_LOG, '水印关闭：保留系统已保存的原片');
         }
@@ -889,6 +889,72 @@ export class PhotoManager implements OutputManager {
     watermarkPixelMap.release();
     if (this.saveMode === 'WM_ONLY') {
       Logger.info(TAG_LOG, 'WM_ONLY: 当前保留系统原片（删除接口未使用）');
+    }
+  }
+
+  // 基于分段式拍照返回的 PhotoAsset，就地替换为水印版
+  private async processDeferredAssetWithWatermark(context: Context, photoAsset: photoAccessHelper.PhotoAsset): Promise<void> {
+    Logger.info(TAG_LOG, '分段式水印处理链阶段: begin');
+    try {
+      const watermarkInfo: WatermarkInfo = await this.getWatermarkInfo();
+      // 读取原片像素数据（通过 URI 解码或后续扩展使用 MediaAssetDataHandler）
+      const originalPixelMap: image.PixelMap = await this.decodePixelMapFromUri(photoAsset.uri);
+      const displayInfo = this.getDisplayInfo();
+      let resultPixelMap: image.PixelMap;
+      try {
+        resultPixelMap = await this.compositeImagesCanvas(originalPixelMap, await this.createWatermarkPixelMap(watermarkInfo, originalPixelMap, displayInfo));
+        try { originalPixelMap.release(); } catch (_) {}
+      } catch (_) {
+        const originalInfo = await originalPixelMap.getImageInfo();
+        const wm = await this.createWatermarkPixelMap(watermarkInfo, originalPixelMap, displayInfo);
+        resultPixelMap = await this.compositeImages(originalPixelMap, wm, originalInfo);
+      }
+      const buffer: ArrayBuffer = await this.encodePixelMapToJpeg(resultPixelMap);
+      const accessHelper = photoAccessHelper.getPhotoAccessHelper(context);
+      try {
+        const changeReq: photoAccessHelper.MediaAssetChangeRequest = new photoAccessHelper.MediaAssetChangeRequest(photoAsset);
+        changeReq.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer);
+        changeReq.saveCameraPhoto();
+        await accessHelper.applyChanges(changeReq);
+        const finalUri = changeReq.getAsset().uri;
+        this.callback(resultPixelMap, finalUri);
+        Logger.info(TAG_LOG, `分段式水印处理完成，保存路径: ${finalUri}`);
+      } finally {
+        try { accessHelper.release(); } catch (_) {}
+      }
+    } catch (e) {
+      Logger.error(TAG_LOG, `分段式水印处理失败: ${String(e)}`);
+      try {
+        const buf = await this.encodePixelMapToJpeg(
+          await this.createWatermarkPixelMap(
+            await this.getWatermarkInfo(),
+            await this.decodePixelMapFromUri(photoAsset.uri),
+            this.getDisplayInfo()
+          )
+        );
+        const sandboxUri = await this.saveBufferToSandbox(context, buf, `watermark_photo_${Date.now()}.jpg`);
+        const pm = await this.decodePixelMapFromUri(sandboxUri);
+        this.callback(pm, sandboxUri);
+        Logger.warn(TAG_LOG, `已保存到应用沙箱兜底: ${sandboxUri}`);
+      } catch (_) {}
+      throw new Error(String(e));
+    } finally {
+      Logger.info(TAG_LOG, '分段式水印处理链阶段: done');
+    }
+  }
+
+  private async saveBufferToSandbox(context: Context, buffer: ArrayBuffer, fileName: string): Promise<string> {
+    const uiCtx = context as common.UIAbilityContext;
+    const sandboxUri = `file://${uiCtx.filesDir}/${fileName}`;
+    let file: fileIo.File | null = null;
+    try {
+      file = fileIo.openSync(sandboxUri, fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE);
+      await fileIo.write(file.fd, buffer);
+      fileIo.closeSync(file);
+      return sandboxUri;
+    } catch (e) {
+      try { if (file) fileIo.closeSync(file); } catch (_) {}
+      throw new Error(String(e));
     }
   }
 
@@ -1700,7 +1766,7 @@ export class PhotoManager implements OutputManager {
       if (!rm) {
         throw new Error('ResourceManager unavailable');
       }
-      const imageBuffer: Uint8Array = await rm.getMediaContent($r('app.media.watermark_logo'));
+      const imageBuffer: Uint8Array = await rm.getMedia($r('app.media.watermark_logo').id);
       if (!imageBuffer || imageBuffer.byteLength === 0) {
         throw new Error('Media content unavailable');
       }

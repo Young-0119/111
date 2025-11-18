@@ -6,11 +6,11 @@
         "type": "HarmonyOS",
         "material": {
           "storeFile": "E:/YY/MyApplication/com.scene.communication.p12",
-          "storePassword": "00000019EF42F92BFBA2E4DFBC33189595DE8570D7601E836D4513C079C50715F52CD3C03351151808",
+          "storePassword": "00000019E2639648425F90C549015EE107E79377F18450F82AB8778EAB507618EC4EA397FFA17DDA6B",
           "keyAlias": "com.scene.communicationKey",
-          "keyPassword": "00000019518B0A60A20C439EB569C493CBB5EEBAB8D741C951D889A5B94EC331BEB523CAAF5BB9A01D",
+          "keyPassword": "00000019C51F5FEB10D564FA901F52C38B8CAC3EE7C1D8C859EC25A1D8B7049F0DCDBA3E23972F0242",
           "signAlg": "SHA256withECDSA",
-          "profile": "E:/YY/MyApplication/release_profile_com.scene.communicationRelease.p7b",
+          "profile": "E:/YY/MyApplication/com.scene.communicationRelease.p7b",
           "certpath": "E:/YY/MyApplication/com.scene.communication.cer"
         }
       }

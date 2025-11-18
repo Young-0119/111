@@ -66,24 +66,6 @@
         }
       },
       {
-        "name": "ohos.permission.WRITE_IMAGEVIDEO",
-        "reason": "$string:reason_write_imagevideo",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility"
-          ]
-        }
-      },
-      {
-        "name": "ohos.permission.READ_IMAGEVIDEO",
-        "reason": "$string:reason_read_imagevideo",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility"
-          ]
-        }
-      },
-      {
         "name": "ohos.permission.LOCATION",
         "reason": "$string:permission_LOCATION",
         "usedScene": {
