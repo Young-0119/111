@@ -6,6 +6,12 @@
     {
       "name": "release",
       "arkOptions": {
+        "obfuscation": {
+          "ruleOptions": {
+            "enable": true,
+            "files": []
+          }
+        }
       },
     },
   ],

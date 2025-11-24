@@ -21,7 +21,6 @@ class CameraConstant {
   static readonly PERMISSIONS: Permissions[] = [
     'ohos.permission.CAMERA',
     'ohos.permission.MICROPHONE',
-    'ohos.permission.MEDIA_LOCATION',
     'ohos.permission.LOCATION',  // 精确位置权限
     'ohos.permission.APPROXIMATELY_LOCATION'
   ];

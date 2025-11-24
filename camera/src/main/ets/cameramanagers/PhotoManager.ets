@@ -817,8 +817,13 @@ export class PhotoManager implements OutputManager {
       quality: this.config.jpegQuality,
       desiredDynamicRange: this.config.dynamicRange
     };
-    const buffer: ArrayBuffer = await imagePackerApi.packing(pixelMap, packOpts);
-    return buffer;
+    try {
+      const buffer: ArrayBuffer = await imagePackerApi.packToData(pixelMap, packOpts);
+      return buffer;
+    } catch (e) {
+      Logger.error(TAG_LOG, `encodePixelMapToJpeg failed: ${String(e)}`);
+      throw new Error('image pack failed');
+    }
   }
 
   async savePixelMapToGallery(pixelMap: image.PixelMap, context: Context): Promise<string> {
@@ -1766,7 +1771,8 @@ export class PhotoManager implements OutputManager {
       if (!rm) {
         throw new Error('ResourceManager unavailable');
       }
-      const imageBuffer: Uint8Array = await rm.getMedia($r('app.media.watermark_logo').id);
+      const res = $r('app.media.watermark_logo');
+      const imageBuffer: Uint8Array = await rm.getMediaContent(res.id);
       if (!imageBuffer || imageBuffer.byteLength === 0) {
         throw new Error('Media content unavailable');
       }

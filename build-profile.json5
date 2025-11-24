@@ -6,9 +6,9 @@
         "type": "HarmonyOS",
         "material": {
           "storeFile": "E:/YY/MyApplication/com.scene.communication.p12",
-          "storePassword": "00000019E2639648425F90C549015EE107E79377F18450F82AB8778EAB507618EC4EA397FFA17DDA6B",
+          "storePassword": "000000195706FA4275CCF3F888265BEE44E8916517914C4A78AB42C486AA172F3D01C6614C58A0138F",
           "keyAlias": "com.scene.communicationKey",
-          "keyPassword": "00000019C51F5FEB10D564FA901F52C38B8CAC3EE7C1D8C859EC25A1D8B7049F0DCDBA3E23972F0242",
+          "keyPassword": "00000019F43082DE9E173A60E15E707DD753D44C5AB340C5379D83C8A3DDB84FAD793AA9A76B63A460",
           "signAlg": "SHA256withECDSA",
           "profile": "E:/YY/MyApplication/com.scene.communicationRelease.p7b",
           "certpath": "E:/YY/MyApplication/com.scene.communication.cer"
@@ -19,8 +19,8 @@
       {
         "name": "default",
         "signingConfig": "default",
-        "targetSdkVersion": "5.1.1(19)",
-        "compatibleSdkVersion": "5.0.5(17)",
+        "targetSdkVersion": "6.0.0(20)",
+        "compatibleSdkVersion": "6.0.0(20)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
@@ -32,7 +32,7 @@
     ],
     "buildModeSet": [
       {
-        "name": "debug",
+        "name": "debug"
       },
       {
         "name": "release"
