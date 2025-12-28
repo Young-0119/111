@@ -29,10 +29,10 @@ struct ModeButtonsView {
       title: $r('app.string.photo'),
       mode: CameraMode.PHOTO
     },
-    {
-      title: $r('app.string.video'),
-      mode: CameraMode.VIDEO
-    }
+    // {
+    //   title: $r('app.string.video'),
+    //   mode: CameraMode.VIDEO
+    // }
   ]
   @Link previewVM: PreviewViewModel; // Do not use @prop, otherwise deep copying, some underlying data will be lost.
   @Require cameraManager: CameraManager;

@@ -20,7 +20,7 @@ class CameraConstant {
   static readonly RATIO_VIDEO: number = 16 / 9;
   static readonly PERMISSIONS: Permissions[] = [
     'ohos.permission.CAMERA',
-    'ohos.permission.MICROPHONE',
+    // 'ohos.permission.MICROPHONE',
     'ohos.permission.LOCATION',  // 精确位置权限
     'ohos.permission.APPROXIMATELY_LOCATION'
   ];

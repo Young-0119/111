@@ -34,6 +34,7 @@ export interface WatermarkInfo {
   longitude?: string;
   latitude?: string;
   organization?: string;
+  title?: string;
 }
 
 // 传感器读数（可用于收敛订阅数据）

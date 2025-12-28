@@ -23,9 +23,15 @@ export class OrganizationService {
   private static instance: OrganizationService | null = null;
   private appContext?: Context;
   private currentOrganization: string = '';
+  private currentTitle: string = '';
+  private currentLogoPath: string = '';
   private listeners: Set<(org: string) => void> = new Set();
+  private logoListeners: Set<(path: string) => void> = new Set();
+  private titleListeners: Set<(title: string) => void> = new Set();
   private readonly PREF_NAME: string = 'watermark_prefs';
   private readonly PREF_KEY_ORGANIZATION: string = 'organization_name';
+  private readonly PREF_KEY_TITLE: string = 'watermark_title_text';
+  private readonly PREF_KEY_LOGO_PATH: string = 'watermark_logo_path';
 
   static getInstance(): OrganizationService {
     if (!OrganizationService.instance) {
@@ -52,6 +58,16 @@ export class OrganizationService {
       if (org && org.length > 0) {
         this.notify(org);
       }
+      
+      const title = await this.getEffectiveTitle(this.resolveContext(this.appContext));
+      if (title) {
+        this.notifyTitle(title);
+      }
+
+      const logo = await this.getEffectiveLogoPath(this.resolveContext(this.appContext));
+      if (logo) {
+        this.notifyLogo(logo);
+      }
     } catch (err) {
       Logger.warn(TAG, `初始化组织失败: ${String(err)}`);
     }
@@ -59,6 +75,14 @@ export class OrganizationService {
 
   getOrganization(): string {
     return this.currentOrganization;
+  }
+
+  getTitle(): string {
+    return this.currentTitle;
+  }
+
+  getLogoPath(): string {
+    return this.currentLogoPath;
   }
 
   private async getOrganizationFromPrefs(ctx?: Context): Promise<string> {
@@ -99,6 +123,43 @@ export class OrganizationService {
     }
   }
 
+  async setTitle(newTitle: string, ctx?: Context): Promise<void> {
+    const normalized = (newTitle || '').trim();
+    if (normalized === this.currentTitle) {
+      return;
+    }
+    this.currentTitle = normalized;
+    this.notifyTitle(normalized);
+    try {
+      const contextToUse: Context | undefined = this.resolveContext(ctx ?? this.appContext);
+      if (contextToUse) {
+        const prefs: preferences.Preferences = await preferences.getPreferences(contextToUse, this.PREF_NAME);
+        await prefs.put(this.PREF_KEY_TITLE, normalized);
+        await prefs.flush();
+      }
+    } catch (err) {
+      Logger.warn(TAG, `持久化标题失败: ${String(err)}`);
+    }
+  }
+
+  async setLogoPath(path: string, ctx?: Context): Promise<void> {
+    if (path === this.currentLogoPath) {
+      return;
+    }
+    this.currentLogoPath = path;
+    this.notifyLogo(path);
+    try {
+      const contextToUse: Context | undefined = this.resolveContext(ctx ?? this.appContext);
+      if (contextToUse) {
+        const prefs: preferences.Preferences = await preferences.getPreferences(contextToUse, this.PREF_NAME);
+        await prefs.put(this.PREF_KEY_LOGO_PATH, path);
+        await prefs.flush();
+      }
+    } catch (err) {
+      Logger.warn(TAG, `持久化Logo失败: ${String(err)}`);
+    }
+  }
+
   async getEffectiveOrganization(ctx?: Context): Promise<string> {
     if (this.currentOrganization && this.currentOrganization.length > 0) {
       return this.currentOrganization;
@@ -106,6 +167,38 @@ export class OrganizationService {
     const org = await this.getOrganizationFromPrefs(this.resolveContext(ctx ?? this.appContext));
     this.currentOrganization = org;
     return org;
+  }
+
+  async getEffectiveTitle(ctx?: Context): Promise<string> {
+    if (this.currentTitle && this.currentTitle.length > 0) {
+      return this.currentTitle;
+    }
+    try {
+      const contextToUse = this.resolveContext(ctx ?? this.appContext);
+      if (contextToUse) {
+        const prefs = await preferences.getPreferences(contextToUse, this.PREF_NAME);
+        const val = await prefs.get(this.PREF_KEY_TITLE, '') as string;
+        if (val) {
+          this.currentTitle = val;
+          return val;
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  async getEffectiveLogoPath(ctx?: Context): Promise<string> {
+    if (this.currentLogoPath) {
+      return this.currentLogoPath;
+    }
+    try {
+      const contextToUse = this.resolveContext(ctx ?? this.appContext);
+      if (contextToUse) {
+        const prefs = await preferences.getPreferences(contextToUse, this.PREF_NAME);
+        this.currentLogoPath = await prefs.get(this.PREF_KEY_LOGO_PATH, '') as string;
+      }
+    } catch (_) {}
+    return this.currentLogoPath;
   }
 
   addListener(listener: (org: string) => void): void {
@@ -116,10 +209,42 @@ export class OrganizationService {
     this.listeners.delete(listener);
   }
 
+  addTitleListener(listener: (title: string) => void): void {
+    this.titleListeners.add(listener);
+  }
+
+  removeTitleListener(listener: (title: string) => void): void {
+    this.titleListeners.delete(listener);
+  }
+
+  addLogoListener(listener: (path: string) => void): void {
+    this.logoListeners.add(listener);
+  }
+
+  removeLogoListener(listener: (path: string) => void): void {
+    this.logoListeners.delete(listener);
+  }
+
   private notify(org: string): void {
     try {
       this.listeners.forEach(fn => {
         try { fn(org); } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  private notifyTitle(title: string): void {
+    try {
+      this.titleListeners.forEach(fn => {
+        try { fn(title); } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  private notifyLogo(path: string): void {
+    try {
+      this.logoListeners.forEach(fn => {
+        try { fn(path); } catch (_) {}
       });
     } catch (_) {}
   }

@@ -5,8 +5,7 @@
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
     "deviceTypes": [
-      "phone",
-      "tablet"
+      "phone"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
@@ -47,15 +46,6 @@
         }
       },
       // [StartExclude permissions]
-      {
-        "name": "ohos.permission.MICROPHONE",
-        "reason": "$string:reason_microphone",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility"
-          ]
-        }
-      },
       {
         "name": "ohos.permission.LOCATION",
         "reason": "$string:permission_LOCATION",
